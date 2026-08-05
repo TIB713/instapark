@@ -1,0 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #F9FAFB;
+    color: #0A0A0A;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+    font-family: 'Outfit', system-ui, sans-serif;
+    letter-spacing: -0.02em;
+}
+
+.font-mono-plate {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.guest-bg {
+    background: linear-gradient(180deg, #0F2044 0%, #1A3C6E 100%);
+    min-height: 100vh;
+}
+
+@layer base {
+    :root {
+        --background: 210 20% 98%;
+        --foreground: 0 0% 4%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 4%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 4%;
+        --primary: 215 60% 27%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 16% 96%;
+        --secondary-foreground: 215 60% 27%;
+        --muted: 210 16% 96%;
+        --muted-foreground: 220 9% 46%;
+        --accent: 210 16% 96%;
+        --accent-foreground: 215 60% 27%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 220 13% 91%;
+        --input: 220 13% 91%;
+        --ring: 215 60% 27%;
+        --radius: 0.75rem;
+        --owner-gold: #B8873D;
+        --owner-gold-tint: #F7EFDE;
+    }
+}
+
+@layer base {
+    * { @apply border-border; }
+}
+
+/* Custom utilities */
+.btn-primary-navy {
+    background-color: #1A3C6E;
+    color: white;
+    transition: all 0.2s ease;
+}
+.btn-primary-navy:hover { background-color: #254F8D; }
+.btn-primary-navy:active { transform: scale(0.98); }
+
+.shadow-card { box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04); }
+
+.pulse-dot {
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.bouncing-dots span {
+    display: inline-block;
+    width: 8px; height: 8px;
+    margin: 0 3px;
+    background: #1A3C6E;
+    border-radius: 50%;
+    animation: bouncedot 1.2s infinite ease-in-out both;
+}
+.bouncing-dots span:nth-child(2) { animation-delay: -0.16s; }
+.bouncing-dots span:nth-child(3) { animation-delay: 0s; }
+.bouncing-dots span:nth-child(1) { animation-delay: -0.32s; }
+@keyframes bouncedot {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+
+.fade-in-up {
+    animation: fadeInUp 0.5s ease-out forwards;
+}
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
