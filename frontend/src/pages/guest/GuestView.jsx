@@ -54,7 +54,7 @@ export default function GuestView() {
     let ws, retryCount = 0, retryTimer;
     const connect = () => {
       const retrievalToken = car?.retrieval_token;
-      ws = new WebSocket(`${WS_BASE}/api/v1/ws/car/${car.id}?token=${retrievalToken}`);
+      ws = new WebSocket(`${WS_BASE}/ws/car/${car.id}?token=${retrievalToken}`);
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === "car_update") { setCar(msg.data); }
@@ -101,9 +101,20 @@ export default function GuestView() {
       setSecondsLeft(null);
       return;
     }
-    publicApi.get(`/qr/${token}/delivery-otp`)
-      .then(r => setDeliveryOtp(r.data.otp))
-      .catch(() => setDeliveryOtp(null));
+    const fetchOtp = () => {
+      publicApi.get(`/retrieval/${car.retrieval_token}/delivery-otp`)
+        .then(r => setDeliveryOtp(r.data.otp))
+        .catch(err => {
+          console.error(
+            "DELIVERY OTP ERROR:",
+            err.response?.status,
+            err.response?.data
+          );
+          setDeliveryOtp(null);
+        });
+    };
+    const otpTimer = setTimeout(fetchOtp, 500);
+
     const tick = () => {
       if (!car.gate_timer_expires_at) { setSecondsLeft(null); return; }
       const diff = Math.max(0, Math.floor((new Date(car.gate_timer_expires_at) - new Date()) / 1000));
@@ -111,9 +122,9 @@ export default function GuestView() {
     };
     tick();
     const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
+    return () => { clearInterval(interval); clearTimeout(otpTimer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [car?.status, car?.gate_timer_expires_at, token]);
+  }, [car?.status, token]);
 
   const handleRequestRetrieval = async () => {
     if (!car) return;

@@ -11,7 +11,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 from pathlib import Path
-import os, uuid, logging, asyncio, bcrypt, jwt, requests, smtplib, re, random, time
+import os, uuid, logging, asyncio, bcrypt, jwt, requests, smtplib, re, random, time, subprocess, tempfile, shutil
+import static_ffmpeg
 from email.mime.text import MIMEText 
 from email.mime.multipart import MIMEMultipart 
 from email.utils import make_msgid
@@ -53,6 +54,13 @@ cloudinary.config(
     api_key=os.environ.get('CLOUDINARY_API_KEY'),
     api_secret=os.environ.get('CLOUDINARY_API_SECRET')
 )
+
+try:
+    FFMPEG_PATH, FFPROBE_PATH = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
+except Exception as e:
+    logging.getLogger("instapark").warning(f"Failed to fetch static_ffmpeg binaries: {e}")
+    FFMPEG_PATH = None
+    FFPROBE_PATH = None
 
 client = AsyncIOMotorClient(
     MONGO_URL,
@@ -213,11 +221,13 @@ async def send_email(to: str, subject: str, html_body: str):
 
 async def send_expo_push(tokens: list, title: str, body_text: str, data: dict = {}):
     """Send push notifications via Expo Push API. Silently ignores failures."""
+    logger.info(f"[PUSH] send_expo_push called with {len(tokens)} raw tokens, title='{title}'")
     if not tokens:
         return
     valid_tokens = [t for t in tokens if t and isinstance(t, str) and t.startswith("ExponentPushToken")]
     if not valid_tokens:
         return
+    logger.info(f"[PUSH] {len(valid_tokens)} valid ExponentPushToken(s) found after filtering")
     messages = [
         {"to": t, "title": title, "body": body_text, "data": data, "sound": "default"}
         for t in valid_tokens
@@ -225,12 +235,28 @@ async def send_expo_push(tokens: list, title: str, body_text: str, data: dict = 
     try:
         import httpx
         async with httpx.AsyncClient() as c:
-            await c.post(
+            resp = await c.post(
                 "https://exp.host/--/api/v2/push/send",
                 json=messages,
                 headers={"Content-Type": "application/json", "Accept": "application/json"},
                 timeout=10
             )
+            try:
+                result = resp.json()
+                tickets = result.get("data", [])
+                for i, ticket in enumerate(tickets):
+                    if ticket.get("status") == "error":
+                        details = ticket.get("details", {})
+                        err_type = details.get("error", "unknown")
+                        token = valid_tokens[i] if i < len(valid_tokens) else "unknown"
+                        logger.warning(f"[PUSH] Ticket error for token={token[:30]}... type={err_type} message={ticket.get('message','')}")
+                        if err_type == "DeviceNotRegistered":
+                            logger.warning(f"[PUSH] DeviceNotRegistered — token should be cleared from DB: {token[:30]}...")
+                    else:
+                        token = valid_tokens[i] if i < len(valid_tokens) else "unknown"
+                        logger.info(f"[PUSH] Ticket ok for token={token[:30]}... id={ticket.get('id','?')}")
+            except Exception as parse_err:
+                logger.warning(f"[PUSH] Could not parse Expo response: {parse_err}")
     except Exception as e:
         logger.warning(f"[PUSH] Failed: {e}")
 
@@ -541,9 +567,11 @@ class PhoneChangeVerify(BaseModel):
 async def superadmin_login(body: LoginEmail):
     sa = await db.superadmins.find_one({"email": body.email.lower()})
     if not sa or not verify_password(body.password, sa["hashed_password"]):
+        logger.warning(f"[AUTH] login fail reason=invalid_credentials identifier={body.email.lower()}")
         raise HTTPException(401, "Invalid credentials")
     payload = {"user_id": sa["id"], "role": "superadmin", "name": sa["name"], "email": sa["email"]}
     token = create_token(payload)
+    logger.info(f"[AUTH] login ok user_id={sa['id']} role=superadmin name={sa.get('name') or '?'}")
     return {"token": token, "superadmin": {"id": sa["id"], "name": sa["name"], "email": sa["email"]}}
 
 @api_router.post("/auth/superadmin/forgot-password")
@@ -622,6 +650,7 @@ async def resolve_true_role(account: dict, collection_name: str) -> dict:
 async def auth_login(request: Request, body: LoginPhone):
     phone = body.phone.strip()
     if not re.match(r"^\d{10}$", phone):
+        logger.warning(f"[AUTH] login fail reason=invalid_format identifier={phone}")
         raise HTTPException(401, "Invalid credentials")
     
     account = None
@@ -636,12 +665,15 @@ async def auth_login(request: Request, body: LoginPhone):
             collection_name = "providers"
 
     if not account:
+        logger.warning(f"[AUTH] login fail reason=not_found identifier={phone}")
         raise HTTPException(401, "Invalid credentials")
 
     if not account.get("is_verified"):
+        logger.warning(f"[AUTH] login fail reason=not_verified identifier={phone}")
         raise HTTPException(403, {"detail": "ACCOUNT_NOT_VERIFIED", "phone": phone, "role": account.get("role")})
         
     if not account.get("is_active", True):
+        logger.warning(f"[AUTH] login fail reason=deactivated identifier={phone}")
         raise HTTPException(403, "Account deactivated")
 
     account = await resolve_true_role(account, collection_name)
@@ -653,9 +685,11 @@ async def auth_login(request: Request, body: LoginPhone):
         hashed_pin = account.get("hashed_pin")
         if hashed_pin:
             if not verify_password(body.password, hashed_pin):
+                logger.warning(f"[AUTH] login fail reason=wrong_pin identifier={phone}")
                 raise HTTPException(401, "Invalid credentials")
         else:
             if account.get("pin") != body.password:
+                logger.warning(f"[AUTH] login fail reason=wrong_pin identifier={phone}")
                 raise HTTPException(401, "Invalid credentials")
             # migrate pin
             await db.drivers.update_one(
@@ -665,12 +699,14 @@ async def auth_login(request: Request, body: LoginPhone):
     else:
         # provider, supervisor, admin, owner
         if not verify_password(body.password, account.get("hashed_password", "")):
+            logger.warning(f"[AUTH] login fail reason=wrong_password identifier={phone}")
             raise HTTPException(401, "Invalid credentials")
 
     # verify parent provider active state
     if role in ("supervisor", "driver"):
         prov = await db.providers.find_one({"id": account["provider_id"]}, {"_id": 0, "is_active": 1, "provider_type": 1})
         if not prov or prov.get("is_active") is False:
+            logger.warning(f"[AUTH] login fail reason=provider_deactivated identifier={phone}")
             raise HTTPException(403, "Provider account is deactivated")
         provider_type = prov.get("provider_type", "valet_provider")
         
@@ -5479,8 +5515,10 @@ async def request_retrieval(cid: str, retrieval_token: Optional[str] = Query(Non
     await manager.broadcast(f"retrievals:{car['event_id']}", {"type": "retrieval_update", "data": car})
 
     async def _push_retrieval():
+        logger.info(f"[PUSH] _push_retrieval triggered for car_id={cid} event_id={car['event_id']}")
         tokens = await get_event_driver_tokens(car["event_id"])
         sup_tokens = await get_event_supervisor_tokens(car["event_id"])
+        logger.info(f"[PUSH] driver_tokens={len(tokens)} sup_tokens={len(sup_tokens)} for event_id={car['event_id']}")
         await send_expo_push(
             list(set(tokens + sup_tokens)),
             title="🚗 Retrieval Requested",
@@ -5734,6 +5772,18 @@ async def get_delivery_otp(token: str):
         car = await db.cars.find_one({"id": card["car_id"]}, {"_id": 0, "id": 1, "status": 1})
     else:
         car = await db.cars.find_one({"qr_token": token}, {"_id": 0, "id": 1, "status": 1})
+    if not car:
+        raise HTTPException(404, "Invalid token")
+    if car["status"] != "ARRIVED_AT_GATE":
+        raise HTTPException(400, "No active delivery code for this car right now")
+    stored = await _otp_get(f"delivery_{car['id']}")
+    if not stored:
+        raise HTTPException(404, "Code not found — ask the driver to try arriving at the gate again")
+    return {"otp": stored["otp"]}
+
+@api_router.get("/retrieval/{retrieval_token}/delivery-otp")
+async def get_retrieval_delivery_otp(retrieval_token: str):
+    car = await db.cars.find_one({"retrieval_token": retrieval_token}, {"_id": 0, "id": 1, "status": 1})
     if not car:
         raise HTTPException(404, "Invalid token")
     if car["status"] != "ARRIVED_AT_GATE":
@@ -6856,6 +6906,104 @@ async def upload(request: Request, file: UploadFile = File(...), folder: str = F
     duration_ms = round((time.perf_counter() - _t0) * 1000, 1)
     test_checkin_logger.info(f"PHOTO_UPLOAD folder={folder} size_kb={round(len(data)/1024, 1)} duration_ms={duration_ms}")
     return {"url": result.get("secure_url") or result.get("url"), "path": path}
+
+
+# Requires ffmpeg + ffprobe installed on the server (apt install ffmpeg) — not currently a dependency of this codebase.
+@api_router.post("/upload/checkin-video")
+@limiter.limit("10/minute")
+async def upload_checkin_video(request: Request, file: UploadFile = File(...), folder: str = Form("misc"), frame_count: int = Form(6), user=Depends(get_current)):
+    _t0 = time.perf_counter()
+    if not (file.content_type or "").startswith("video/"):
+        raise HTTPException(400, "Only video files are allowed")
+    
+    data = await file.read()
+    
+    input_path = ""
+    temp_dir = ""
+    video_url = None
+    photo_urls = []
+    
+    try:
+        if FFMPEG_PATH is None or FFPROBE_PATH is None:
+            video_result = await put_object(f"{folder}/video_{uuid.uuid4()}.mp4", data, content_type=file.content_type or "video/mp4")
+            video_url = video_result.get("secure_url") or video_result.get("url")
+            logger.warning("static_ffmpeg binaries missing, skipping frame extraction.")
+            return {"video_url": video_url, "photo_urls": []}
+            
+        # Save video to temp file
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_video:
+            tmp_video.write(data)
+            input_path = tmp_video.name
+            
+        # Upload original video
+        video_result = await put_object(f"{folder}/video_{uuid.uuid4()}.mp4", data, content_type=file.content_type or "video/mp4")
+        video_url = video_result.get("secure_url") or video_result.get("url")
+        
+        # Create temp dir for frames
+        temp_dir = tempfile.mkdtemp()
+        
+        # Get duration
+        loop = asyncio.get_running_loop()
+        try:
+            duration_out = await loop.run_in_executor(
+                None,
+                lambda: subprocess.check_output(
+                    [FFPROBE_PATH, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrapper=1:nokey=1", input_path],
+                    stderr=subprocess.STDOUT
+                )
+            )
+            duration = float(duration_out.decode('utf-8').strip())
+        except Exception as e:
+            logger.warning(f"Failed to get video duration with ffprobe, defaulting to 10.0s: {e}")
+            duration = 10.0
+            
+        # Extract frames
+        if duration > 0 and frame_count > 0:
+            # Avoid exactly 0 and exactly duration
+            start_time = duration * 0.05
+            end_time = duration * 0.95
+            interval = (end_time - start_time) / (frame_count - 1) if frame_count > 1 else 0
+            
+            for i in range(frame_count):
+                ts = start_time + (i * interval)
+                out_frame = os.path.join(temp_dir, f"frame_{i}.jpg")
+                try:
+                    await loop.run_in_executor(
+                        None,
+                        lambda: subprocess.check_output(
+                            [FFMPEG_PATH, "-ss", str(ts), "-i", input_path, "-frames:v", "1", "-q:v", "3", "-y", out_frame],
+                            stderr=subprocess.STDOUT
+                        )
+                    )
+                    
+                    if os.path.exists(out_frame):
+                        with open(out_frame, "rb") as f:
+                            frame_data = f.read()
+                        frame_result = await put_object(f"{folder}/frame_{i}_{uuid.uuid4()}.jpg", frame_data, content_type="image/jpeg")
+                        frame_url = frame_result.get("secure_url") or frame_result.get("url")
+                        if frame_url:
+                            photo_urls.append(frame_url)
+                except Exception as e:
+                    logger.error(f"Failed to extract or upload frame {i} at {ts}s: {e}")
+                    
+    except Exception as e:
+        logger.error(f"Error processing video upload: {e}")
+    finally:
+        if input_path and os.path.exists(input_path):
+            try:
+                os.remove(input_path)
+            except Exception:
+                pass
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+                
+    duration_ms = round((time.perf_counter() - _t0) * 1000, 1)
+    test_checkin_logger.info(f"VIDEO_UPLOAD folder={folder} size_kb={round(len(data)/1024, 1)} frames_extracted={len(photo_urls)} duration_ms={duration_ms}")
+    
+    return {"video_url": video_url, "photo_urls": photo_urls}
 
 
 
