@@ -22,6 +22,7 @@ export default function Providers() {
   const [open, setOpen] = useState(false);
   const [created, setCreated] = useState(null);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -102,10 +103,12 @@ export default function Providers() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (submitting) return; // block if already submitting
     const errs = validate();
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
     
+    setSubmitting(true);
     try {
       const providerData = {
         name: form.name,
@@ -135,6 +138,8 @@ export default function Providers() {
       toast.success("Provider created successfully");
     } catch (err) { 
       toast.error(err.response?.data?.detail || "Failed to create provider"); 
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -383,10 +388,11 @@ export default function Providers() {
 
                 <p className="text-xs text-gray-400 mb-2"><span className="text-red-500">*</span> Required fields</p>
                   <div className="mt-8 flex flex-wrap gap-3">
-                  <button type="button" onClick={() => { setOpen(false); setErrors({}); }} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 font-medium transition-colors">Cancel</button>
-                  <button type="submit" data-testid="submit-provider-btn"
-                          className="flex-1 btn-primary-navy rounded-xl py-2.5 font-medium shadow-lg shadow-[#1A3C6E]/20">
-                    Create Account
+                  <button type="button" disabled={submitting} onClick={() => { setOpen(false); setErrors({}); }} 
+                          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed">Cancel</button>
+                  <button type="submit" data-testid="submit-provider-btn" disabled={submitting}
+                          className="flex-1 btn-primary-navy rounded-xl py-2.5 font-medium shadow-lg shadow-[#1A3C6E]/20 disabled:opacity-60 disabled:cursor-not-allowed">
+                    {submitting ? "Creating..." : "Create Account"}
                   </button>
                 </div>
               </form>

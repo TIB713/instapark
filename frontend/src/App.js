@@ -19,6 +19,7 @@ import Cars from "@/pages/superadmin/Cars";
 import CarDetail from "@/pages/superadmin/CarDetail";
 import LiveMonitor from "@/pages/superadmin/LiveMonitor";
 import Settings from "@/pages/superadmin/Settings";
+import Plans from "@/pages/superadmin/Plans";
 import GuestView from "@/pages/guest/GuestView";
 import PreRegister from "@/pages/guest/PreRegister";
 import EventPreRegister from "@/pages/guest/EventPreRegister";
@@ -97,6 +98,7 @@ function App() {
           {/* Superadmin Routes */}
           <Route path="/superadmin/login" element={<SuperLogin />} />
           <Route path="/superadmin/dashboard" element={<RequireAuth><SuperDashboard /></RequireAuth>} />
+          <Route path="/superadmin/plans" element={<RequireAuth><Plans /></RequireAuth>} />
           <Route path="/superadmin/providers" element={<RequireAuth><Providers /></RequireAuth>} />
           <Route path="/superadmin/providers/:id" element={<RequireAuth><ProviderDetail /></RequireAuth>} />
           <Route path="/superadmin/hotels" element={<RequireAuth><Hotels /></RequireAuth>} />

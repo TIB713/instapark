@@ -30,27 +30,38 @@ export default function GuestView() {
   const [deliveryOtp, setDeliveryOtp] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
 
+  const [etaAnchor, setEtaAnchor] = useState(null);
+  const [displayEtaMinutes, setDisplayEtaMinutes] = useState(null);
+  const [etaArrivingSoon, setEtaArrivingSoon] = useState(false);
+
+  const [plateVerified, setPlateVerified] = useState(false);
+  const [plateInput, setPlateInput] = useState("");
+  const [plateError, setPlateError] = useState("");
+  const [plateLocked, setPlateLocked] = useState(false);
+  const [verifyingPlate, setVerifyingPlate] = useState(false);
+  const [plateCheckDone, setPlateCheckDone] = useState(false);
+
   useEffect(() => {
-    let cancel = false;
-    const isRetrieval = window.location.pathname.startsWith('/r/');
-    api.get(isRetrieval ? `/retrieval/${token}` : `/qr/${token}`)
-      .then(r => { 
-        if (!cancel) { 
-          setCar(r.data); 
-          setLoading(false); 
-          if (!isRetrieval && r.data.retrieval_token) {
-            setTimeout(() => {
-              window.history.replaceState(null, '', `/r/${r.data.retrieval_token}`);
-            }, 50);
-          }
-        } 
-      })
-      .catch(() => { if (!cancel) { setInvalid(true); setLoading(false); } });
-    return () => { cancel = true; };
+    const cachedVerified = sessionStorage.getItem(`plate_verified_${token}`);
+    const cachedCar = sessionStorage.getItem(`guest_car_${token}`);
+    if (cachedVerified === "1" && cachedCar) {
+      try {
+        const parsedCar = JSON.parse(cachedCar);
+        setCar(parsedCar);
+        setPlateVerified(true);
+        if (!window.location.pathname.startsWith('/r/') && parsedCar.retrieval_token) {
+          setTimeout(() => {
+            window.history.replaceState(null, '', `/r/${parsedCar.retrieval_token}`);
+          }, 50);
+        }
+      } catch {}
+    }
+    setPlateCheckDone(true);
+    setLoading(false);
   }, [token]);
 
   useEffect(() => {
-    if (!car?.id) return;
+    if (!car?.id || !plateVerified) return;
     let ws, retryCount = 0, retryTimer;
     const connect = () => {
       const retrievalToken = car?.retrieval_token;
@@ -83,6 +94,7 @@ export default function GuestView() {
   }, [car?.id, car?.retrieval_token, token]);
 
   useEffect(() => {
+    if (!car?.id || !plateVerified) return;
     if (
       car?.status === "RETRIEVAL_REQUESTED" ||
       car?.status === "BEING_FETCHED"
@@ -96,6 +108,7 @@ export default function GuestView() {
   }, [car?.status]);
 
   useEffect(() => {
+    if (!car?.id || !plateVerified) return;
     if (car?.status !== "ARRIVED_AT_GATE") {
       setDeliveryOtp(null);
       setSecondsLeft(null);
@@ -125,6 +138,72 @@ export default function GuestView() {
     return () => { clearInterval(interval); clearTimeout(otpTimer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [car?.status, token]);
+
+  useEffect(() => {
+    if (car?.status !== "BEING_FETCHED") {
+      setEtaAnchor(null);
+      setEtaArrivingSoon(false);
+      return;
+    }
+    const rawEta = queuePosition?.estimated_wait_minutes ?? eta;
+    if (rawEta == null) return;
+    if (!etaAnchor) {
+      const cappedMinutes = Math.min(rawEta, 10);
+      setEtaAnchor({ startedAt: Date.now(), cappedMinutes });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [car?.status, queuePosition?.estimated_wait_minutes, eta]);
+
+  useEffect(() => {
+    if (!etaAnchor) {
+      setDisplayEtaMinutes(null);
+      setEtaArrivingSoon(false);
+      return;
+    }
+    const tick = () => {
+      const elapsedMinutes = (Date.now() - etaAnchor.startedAt) / 60000;
+      const remaining = etaAnchor.cappedMinutes - elapsedMinutes;
+      if (remaining <= 1) {
+        setDisplayEtaMinutes(1);
+        setEtaArrivingSoon(remaining <= 0.15);
+      } else {
+        setDisplayEtaMinutes(Math.ceil(remaining));
+        setEtaArrivingSoon(false);
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [etaAnchor]);
+
+  const verifyPlate = async () => {
+    if (!plateInput.trim()) return;
+    setVerifyingPlate(true);
+    setPlateError("");
+    try {
+      const { data } = await publicApi.post(`/guest-access/${token}/verify-plate`, { plate: plateInput });
+      if (data.verified && data.car) {
+        setCar(data.car);
+        setPlateVerified(true);
+        sessionStorage.setItem(`plate_verified_${token}`, "1");
+        sessionStorage.setItem(`guest_car_${token}`, JSON.stringify(data.car));
+        const isRetrieval = window.location.pathname.startsWith('/r/');
+        if (!isRetrieval && data.car.retrieval_token) {
+          setTimeout(() => {
+            window.history.replaceState(null, '', `/r/${data.car.retrieval_token}`);
+          }, 50);
+        }
+      }
+    } catch (err) {
+      if (err.response?.status === 423) {
+        setPlateLocked(true);
+      } else {
+        setPlateError(err.response?.data?.detail || "Could not verify. Please try again.");
+      }
+    } finally {
+      setVerifyingPlate(false);
+    }
+  };
 
   const handleRequestRetrieval = async () => {
     if (!car) return;
@@ -190,7 +269,7 @@ export default function GuestView() {
 
   const getMaxDateTime = () => {
     const max = new Date();
-    max.setHours(max.getHours() + 12);
+    max.setMinutes(max.getMinutes() + 30);
     const offset = max.getTimezoneOffset() * 60000;
     return new Date(max.getTime() - offset).toISOString().slice(0, 16);
   };
@@ -216,13 +295,59 @@ export default function GuestView() {
     </div>
   );
 
-  if (invalid) return (
+  if (plateCheckDone && !plateVerified) {
+    if (plateLocked) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-[#0F2044] to-[#1A3C6E] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center">
+            <div className="w-14 h-14 bg-red-100 rounded-full mx-auto flex items-center justify-center mb-4">
+              <span className="text-2xl">🔒</span>
+            </div>
+            <h1 className="font-bold text-xl text-gray-800 mb-2">Too Many Attempts</h1>
+            <p className="text-gray-500 text-sm">
+              This link has been locked for security. Please contact the valet desk for assistance.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#0F2044] to-[#1A3C6E] flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-6 text-center">
+          <div className="w-14 h-14 bg-[#1A3C6E]/10 rounded-full mx-auto flex items-center justify-center mb-4">
+            <Car className="w-7 h-7 text-[#1A3C6E]" />
+          </div>
+          <h1 className="font-bold text-lg text-gray-800 mb-1">Verify Your Vehicle</h1>
+          <p className="text-gray-400 text-xs mb-5">Enter your registration number to continue</p>
+          <input
+            type="text"
+            value={plateInput}
+            onChange={e => { setPlateInput(e.target.value.toUpperCase()); setPlateError(""); }}
+            placeholder="e.g. GJ01AB1234"
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center font-mono font-bold text-lg tracking-wider text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] uppercase"
+            maxLength={15}
+            onKeyDown={e => { if (e.key === "Enter") verifyPlate(); }}
+          />
+          {plateError && <p className="text-red-500 text-xs mt-2 font-semibold">{plateError}</p>}
+          <button
+            onClick={verifyPlate}
+            disabled={!plateInput.trim() || verifyingPlate}
+            className="w-full mt-4 btn-primary-navy rounded-xl py-3 text-sm font-bold disabled:opacity-50"
+          >
+            {verifyingPlate ? "Verifying…" : "Continue"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (invalid || !car) return (
     <div className="guest-bg flex items-center justify-center px-4">
       <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center fade-in-up" data-testid="guest-invalid">
         <div className="w-16 h-16 bg-amber-100 rounded-full mx-auto flex items-center justify-center">
           <Clock className="w-8 h-8 text-amber-600" />
         </div>
-        <h1 className="font-heading text-2xl font-bold text-[#0F2044] mt-5">Invalid QR Code</h1>
+        <h1 className="font-heading text-2xl font-bold text-[#0F2044] mt-5">Invalid Link</h1>
         <p className="text-gray-500 mt-2 text-sm">Please see the valet attendant.</p>
       </div>
     </div>
@@ -391,19 +516,32 @@ export default function GuestView() {
             </div>
 
             <div className="px-6 py-5">
-              {status === "BEING_FETCHED" && (queuePosition?.estimated_wait_minutes ?? eta) ? (
+              {status === "BEING_FETCHED" && displayEtaMinutes != null ? (
                 <div className="bg-amber-50 border border-amber-100
                   rounded-2xl p-4 text-center mb-4">
-                  <p className="text-xs font-bold text-amber-600
-                    uppercase tracking-wider">
-                    Estimated Wait Time
-                  </p>
-                  <p className="text-3xl font-extrabold text-[#0F2044] mt-1">
-                    ~{queuePosition?.estimated_wait_minutes ?? eta} min
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Time left before your car arrives
-                  </p>
+                  {etaArrivingSoon ? (
+                    <>
+                      <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
+                        Almost There
+                      </p>
+                      <p className="text-2xl font-extrabold text-[#0F2044] mt-1">
+                        🚗 Arriving any moment
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-bold text-amber-600
+                        uppercase tracking-wider">
+                        Estimated Wait Time
+                      </p>
+                      <p className="text-3xl font-extrabold text-[#0F2044] mt-1">
+                        ~{displayEtaMinutes} min
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Time left before your car arrives
+                      </p>
+                    </>
+                  )}
                 </div>
               ) : status === "RETRIEVAL_REQUESTED" ? (
                 <div className="bg-amber-50 border border-amber-100
@@ -492,8 +630,8 @@ export default function GuestView() {
           </div>
         )}
 
-        {/* Screen 3.5: ARRIVED_AT_GATE */}
-        {status === "ARRIVED_AT_GATE" && (
+        {/* Sub-state A: OTP not yet verified — show timer + OTP code (existing content, unchanged) */}
+        {status === "ARRIVED_AT_GATE" && !car?.otp_verified && (
           <div className="bg-white rounded-3xl shadow-2xl overflow-hidden fade-in-up" data-testid="state-arrived-gate">
             <div className="p-6 text-center text-white bg-gradient-to-br from-[#1A3C6E] to-[#0F2044]">
               <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center backdrop-blur">
@@ -523,6 +661,54 @@ export default function GuestView() {
                   <p className="text-xs text-gray-400 mt-2">The driver needs this code to hand over your car.</p>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Sub-state B: OTP verified — driver is taking photo and collecting QR card */}
+        {status === "ARRIVED_AT_GATE" && car?.otp_verified && (
+          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden fade-in-up">
+            
+            {/* Header */}
+            <div className="p-6 text-center text-white bg-gradient-to-br from-emerald-500 to-emerald-600">
+              <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center backdrop-blur mb-3">
+                <span className="text-4xl">✅</span>
+              </div>
+              <h2 className="font-bold text-xl">Code Verified!</h2>
+              <p className="text-white/90 text-sm mt-1">Almost done — just a few seconds more</p>
+            </div>
+
+            {/* Steps for the guest */}
+            <div className="px-6 py-5 space-y-4">
+
+              {/* Step 1 */}
+              <div className="flex items-start gap-4 bg-gray-50 rounded-2xl p-4">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-emerald-600 font-bold text-sm">1</span>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-800 text-sm">Driver is taking a delivery photo</p>
+                  <p className="text-gray-400 text-xs mt-0.5">This documents the handover for your protection</p>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="flex items-start gap-4 bg-gray-50 rounded-2xl p-4">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-emerald-600 font-bold text-sm">2</span>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-800 text-sm">Hand the QR key tag back to the driver</p>
+                  <p className="text-gray-400 text-xs mt-0.5">Please return the key tag card you were given at check-in</p>
+                </div>
+              </div>
+
+              {/* Pulse indicator */}
+              <div className="flex items-center justify-center gap-2 pt-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <p className="text-xs text-gray-400">Completing handover...</p>
+              </div>
+
             </div>
           </div>
         )}

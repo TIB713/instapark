@@ -1043,12 +1043,22 @@ export default function ProviderDetail() {
       }));
   }, [providerQrCards]);
 
+  const allQrGroup = useMemo(() => ({
+    dateKey: "all",
+    label: "All",
+    cards: [...providerQrCards].sort((a, b) => {
+      const na = Number(a.key_tag_number), nb = Number(b.key_tag_number);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return String(a.key_tag_number).localeCompare(String(b.key_tag_number));
+    }),
+  }), [providerQrCards]);
+
   useEffect(() => {
     if (qrGroupsByDate.length === 0) {
       setSelectedQrDate(null);
       return;
     }
-    const stillExists = qrGroupsByDate.some(g => g.dateKey === selectedQrDate);
+    const stillExists = selectedQrDate === "all" || qrGroupsByDate.some(g => g.dateKey === selectedQrDate);
     if (!stillExists) {
       setSelectedQrDate(qrGroupsByDate[0].dateKey); // latest date
       setQrPage(1);
@@ -1059,7 +1069,7 @@ export default function ProviderDetail() {
     setQrPage(1);
   }, [selectedQrDate]);
 
-  const selectedQrGroup = qrGroupsByDate.find(g => g.dateKey === selectedQrDate) || null;
+  const selectedQrGroup = selectedQrDate === "all" ? allQrGroup : (qrGroupsByDate.find(g => g.dateKey === selectedQrDate) || null);
   const qrTotalPages = selectedQrGroup ? Math.max(1, Math.ceil(selectedQrGroup.cards.length / QR_TAGS_PER_PAGE)) : 1;
   const qrVisibleCards = selectedQrGroup
     ? selectedQrGroup.cards.slice((qrPage - 1) * QR_TAGS_PER_PAGE, (qrPage - 1) * QR_TAGS_PER_PAGE + QR_TAGS_PER_PAGE)
@@ -1974,6 +1984,7 @@ export default function ProviderDetail() {
                       onChange={(e) => setSelectedQrDate(e.target.value)}
                       className="px-3 py-2 rounded-lg border border-gray-200 outline-none focus:border-[#1A3C6E] text-sm font-bold text-[#0F2044] bg-white"
                     >
+                      <option value="all">All ({providerQrCards.length} tag{providerQrCards.length !== 1 ? "s" : ""})</option>
                       {qrGroupsByDate.map(g => (
                         <option key={g.dateKey} value={g.dateKey}>
                           {g.label} ({g.cards.length} tag{g.cards.length !== 1 ? "s" : ""})
