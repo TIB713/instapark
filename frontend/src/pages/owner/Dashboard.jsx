@@ -119,9 +119,6 @@ export default function OwnerDashboard() {
         <StatCard testid="stat-rating" label="Avg Rating"
           value={safeStats.platform_avg_rating ? `${safeStats.platform_avg_rating}★` : "—"}
           icon={<Star className="w-5 h-5 text-amber-500" />} accent="bg-amber-50" />
-        <StatCard testid="stat-rating-drv" label="Driver Rating"
-          value={safeStats.driver_avg_rating ? `${safeStats.driver_avg_rating}★` : "—"}
-          icon={<Star className="w-5 h-5 text-amber-500" />} accent="bg-amber-50" />
         <StatCard testid="stat-pending" label="Pending Fetch"
           value={safeStats.pending_retrievals ?? "—"}
           sub="retrievals requested"

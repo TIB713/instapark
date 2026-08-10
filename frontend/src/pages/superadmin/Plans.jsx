@@ -111,10 +111,10 @@ export default function Plans() {
           <SkeletonTable rows={5} />
         ) : plans.length === 0 ? (
           <EmptyState
-            icon={CreditCard}
+            icon={<CreditCard className="w-8 h-8" />}
             title="No plans created yet"
             description="Add your first subscription plan to set limits for providers."
-            action={{ label: "Add Plan", onClick: openNew }}
+            action={<button onClick={openNew} className="btn-primary-navy px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"><Plus className="w-4 h-4" /> Add Plan</button>}
           />
         ) : (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">

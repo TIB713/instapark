@@ -126,7 +126,7 @@ export default function SupervisorDetail() {
             </span>
           </td>
           <td style="padding:10px;text-align:center;">${e.total_cars}</td>
-          <td style="padding:10px;text-align:center;">${e.platform_avg_rating > 0 ? e.platform_avg_rating + "★" : "—"} (P) / ${e.driver_avg_rating > 0 ? e.driver_avg_rating + "★" : "—"} (D)</td>
+          <td style="padding:10px;text-align:center;">${e.platform_avg_rating > 0 ? e.platform_avg_rating + "★" : "—"} (P)</td>
           <td style="padding:10px;text-align:center;">${e.drivers_count}</td>
         </tr>
       `).join("");
@@ -163,7 +163,7 @@ export default function SupervisorDetail() {
             <div class="stat-card"><div class="stat-value">${sum.total_events}</div><div class="stat-label">Total Events</div></div>
             <div class="stat-card"><div class="stat-value">${sum.incidents_reported ?? 0}</div><div class="stat-label">Incidents Reported</div></div>
             <div class="stat-card"><div class="stat-value">${sum.platform_avg_rating > 0 ? sum.platform_avg_rating + "★" : "—"}</div><div class="stat-label">Platform Rating</div></div>
-            <div class="stat-card"><div class="stat-value">${sum.driver_avg_rating > 0 ? sum.driver_avg_rating + "★" : "—"}</div><div class="stat-label">Driver Rating</div></div>
+            
             <div class="stat-card"><div class="stat-value">${sum.total_drivers_overseen}</div><div class="stat-label">Unique Drivers Overseen</div></div>
           </div>
         </div>
@@ -368,7 +368,6 @@ export default function SupervisorDetail() {
                     { label: "Total Events", value: stats?.total_events ?? 0, icon: Calendar, tab: "events" },
                     { label: "Incidents", value: stats?.incidents_reported ?? 0, icon: AlertTriangle, tab: "incidents" },
                     { label: "Platform Rating", value: stats?.platform_avg_rating > 0 ? stats?.platform_avg_rating + "★" : "—", icon: Star, tab: null },
-                    { label: "Driver Rating", value: stats?.driver_avg_rating > 0 ? stats?.driver_avg_rating + "★" : "—", icon: Star, tab: null },
                     { label: "Drivers Overseen", value: stats?.total_drivers_overseen ?? 0, icon: User, tab: null }
                   ].map(s => (
                     <div

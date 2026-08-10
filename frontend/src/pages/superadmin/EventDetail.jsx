@@ -90,6 +90,8 @@ export default function EventDetail() {
 
   const [guestCount, setGuestCount] = useState(0);
 
+  const [feedback, setFeedback] = useState([]);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
   const load = async () => {
     try {
       const [resDetail, resCars, resIncidents, resGuestCount] = await Promise.all([
@@ -129,6 +131,16 @@ export default function EventDetail() {
   };
 
 
+
+    useEffect(() => {
+    if (activeTab !== "feedback" || !event) return;
+    if (feedback.length === 0) setLoadingFeedback(true);
+    api.get(`/events/${eid}/feedback`)
+      .then(r => setFeedback(r.data))
+      .catch(() => { })
+      .finally(() => setLoadingFeedback(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, eid, event?.id]);
 
   useEffect(() => {
     if (activeTab !== "queue" || !event) return;
@@ -316,7 +328,7 @@ export default function EventDetail() {
         "Key Tag", "Guest Name", "Guest Phone", "Check-in Time",
         "Parked At", "Delivered At", "Duration (min)",
         "Retrieval Time (min)", "Check-in Driver", "Parked Driver",
-        "Retrieval Driver", "Platform Rating", "Driver Rating", "Notes",
+        "Retrieval Driver", "Platform Rating", "Notes",
         "Pre-registered", "Walk-in", "Peak Hour", "Still Parked"
       ].join(",");
       const rows = data.cars.map(c =>
@@ -326,7 +338,7 @@ export default function EventDetail() {
           c.guest_phone, c.check_in_time, c.parked_at,
           c.delivered_at, c.duration_minutes,
           c.retrieval_minutes, c.check_in_driver,
-          c.parked_driver, c.retrieval_driver, c.rating, c.driver_rating,
+          c.parked_driver, c.retrieval_driver, c.rating,
           `"${(c.notes || "").replace(/"/g, "'")}"`,
           data.summary.pre_registered || 0,
           data.summary.walk_in || 0,
@@ -395,9 +407,6 @@ export default function EventDetail() {
           </td>
           <td style="padding:8px 10px;text-align:center;">
             ${d.retrievals}
-          </td>
-          <td style="padding:8px 10px;text-align:center;">
-            ${d.avg_rating || "—"}
           </td>
           <td style="padding:8px 10px;text-align:center;
             color:${d.incidents > 0 ? "#ef4444" : "#6b7280"};">
@@ -508,13 +517,7 @@ export default function EventDetail() {
               </div>
               <div class="stat-label">Platform Rating</div>
             </div>
-            <div class="stat-card">
-              <div class="stat-value">
-                ${s.driver_avg_rating > 0
-          ? s.driver_avg_rating + "★" : "—"}
-              </div>
-              <div class="stat-label">Driver Rating</div>
-            </div>
+
             <div class="stat-card">
               <div class="stat-value">
                 ${s.avg_duration_minutes}m
@@ -546,7 +549,7 @@ export default function EventDetail() {
           <table><thead><tr>
             <th>Driver</th><th>Employee ID</th>
             <th>Check-ins</th><th>Retrievals</th>
-            <th>Avg Rating</th><th>Incidents</th>
+            <th>Incidents</th>
           </tr></thead>
           <tbody>${driverRows}</tbody></table>
         </div>
@@ -884,6 +887,7 @@ export default function EventDetail() {
             { id: "supervisors", label: "Supervisors", icon: CheckCircle2 },
             { id: "cars", label: "Cars", icon: Car },
             { id: "incidents", label: "Incidents", icon: AlertTriangle },
+            { id: "feedback", label: "Feedback", icon: MessageSquare },
             ...(event?.status === "active" ? [{ id: "queue", label: "Live Queue", icon: Radio, live: true }] : [])
           ].map(tab => (
             <button
@@ -1295,7 +1299,6 @@ export default function EventDetail() {
                           <th className="text-left px-5 py-3.5 text-center">Status</th>
                           <th className="text-left px-5 py-3.5 text-center">Cars Checked In</th>
                           <th className="text-left px-5 py-3.5 text-center">Retrievals</th>
-                          <th className="text-left px-5 py-3.5 text-center">Avg Rating</th>
                           <th className="text-left px-5 py-3.5 text-center">Incidents</th>
                           <th className="text-right px-5 py-3.5">Performance</th>
                           <th className="text-right px-5 py-3.5">Action</th>
@@ -1346,9 +1349,6 @@ export default function EventDetail() {
                               </td>
                               <td className="px-5 py-3.5 text-center font-semibold">{driver.cars_checked_in ?? 0}</td>
                               <td className="px-5 py-3.5 text-center font-semibold">{driver.cars_retrieved ?? 0}</td>
-                              <td className="px-5 py-3.5 text-center font-semibold text-gray-500">
-                                {driver.avg_rating ? `${driver.avg_rating}★` : "—"}
-                              </td>
                               <td className={`px-5 py-3.5 text-center font-bold ${driver.incidents > 0 ? "text-red-500" : "text-emerald-500"}`}>
                                 {driver.incidents ?? 0}
                               </td>
@@ -1557,6 +1557,78 @@ export default function EventDetail() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+
+        {activeTab === "feedback" && (
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex-1 relative mb-10">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <h3 className="font-heading font-bold text-gray-800 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-gray-400" />
+                Guest Feedback
+              </h3>
+            </div>
+            <div className="p-4 sm:p-6 flex flex-col gap-4 bg-gray-50/20">
+              {loadingFeedback ? (
+                <div className="py-20 flex flex-col items-center justify-center">
+                  <div className="w-8 h-8 border-4 border-[#0F2044]/20 border-t-[#0F2044] rounded-full animate-spin mb-3"></div>
+                  <p className="text-gray-400 font-medium text-sm">Loading feedback...</p>
+                </div>
+              ) : feedback.length === 0 ? (
+                <div className="text-center py-20 bg-white border border-gray-100 rounded-2xl shadow-sm">
+                  <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center mx-auto mb-3">
+                    <MessageSquare className="w-6 h-6 text-gray-300" />
+                  </div>
+                  <p className="text-gray-500 font-semibold">No feedback yet</p>
+                  <p className="text-gray-400 text-sm mt-1">When guests submit ratings, they will appear here</p>
+                </div>
+              ) : (
+                feedback.map(item => (
+                  <div key={item.id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-gray-100 text-gray-600 border border-gray-200">{item.plate}</span>
+                          <span className="font-bold text-gray-800">{item.guest_name}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map(star => (
+                            <Star key={star} className={`w-3.5 h-3.5 ${star <= item.stars ? 'text-amber-400 fill-amber-400' : 'text-gray-200'}`} />
+                          ))}
+                          <span className="text-xs text-gray-400 ml-2">{fmtDateTime(item.created_at)}</span>
+                        </div>
+                      </div>
+                      {item.driver_name && (
+                        <div className="text-right flex flex-col items-end">
+                          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Retrieval Driver</span>
+                          <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">
+                            <Car className="w-3.5 h-3.5 text-gray-400" />
+                            {item.driver_name}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {item.issues && Object.values(item.issues).some(Boolean) && (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {item.issues.extra_money_asked && <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">Extra money asked</span>}
+                        {item.issues.misbehaved && <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">Misbehaved</span>}
+                        {item.issues.late_arrival && <span className="px-2 py-1 bg-amber-50 text-amber-600 border border-amber-100 rounded-full text-xs font-semibold">Late arrival</span>}
+                        {item.issues.vehicle_damaged && <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">Vehicle damaged</span>}
+                        {item.issues.unauthorized_personal_use && <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">Unauthorized use</span>}
+                      </div>
+                    )}
+
+                    {item.comment && (
+                      <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-100 text-sm text-gray-600 italic">
+                        "{item.comment}"
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
 

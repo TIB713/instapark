@@ -525,7 +525,6 @@ export default function ProviderDetail() {
           ["Supervisors", s.total_supervisors],
           ["Incidents", s.total_incidents],
           ["Platform Rating", s.platform_avg_rating > 0 ? s.platform_avg_rating + "★" : "-"],
-          ["Driver Rating", s.driver_avg_rating > 0 ? s.driver_avg_rating + "★" : "-"],
           ["Avg Duration", s.avg_duration_minutes > 0
             ? s.avg_duration_minutes + " min" : "—"],
         ].map(([label, value]) => `
@@ -728,7 +727,7 @@ export default function ProviderDetail() {
     if (!/^\d{10}$/.test(editForm.phone.replace(/\D/g, ""))) errs.phone = "Please enter a valid 10-digit phone number";
     if (editForm.provider_password && editForm.provider_password.length < 8) errs.provider_password = "Password must be at least 8 characters";
     if (editForm.provider_password !== editForm.provider_confirm_password) errs.provider_confirm_password = "Passwords do not match";
-    
+
     if (p?.provider_type === "valet_provider") {
     }
 
@@ -745,7 +744,7 @@ export default function ProviderDetail() {
       delete payload.provider_confirm_password;
       if (!payload.provider_password) delete payload.provider_password;
       else { payload.password = payload.provider_password; delete payload.provider_password; }
-      
+
       if (p?.provider_type === "valet_provider") {
         payload.max_events = payload.max_events !== "" ? parseInt(payload.max_events) : 0;
         payload.max_hotels = payload.max_hotels !== "" ? parseInt(payload.max_hotels) : 0;
@@ -1186,7 +1185,6 @@ export default function ProviderDetail() {
                     { label: "Drivers", value: stats?.drivers ?? "—", icon: Users, tab: "drivers" },
                     { label: "Supervisors", value: stats?.supervisors ?? "—", icon: Shield, tab: "supervisors" },
                     { label: "Platform Rating", value: stats?.platform_avg_rating ? `${stats.platform_avg_rating}/5` : "—", icon: Star, tab: null },
-                    { label: "Driver Rating", value: stats?.driver_avg_rating ? `${stats.driver_avg_rating}/5` : "—", icon: Star, tab: null },
                     { label: "Incidents", value: stats?.incidents ?? "—", icon: AlertTriangle, tab: "incidents" },
                   ].map(s => (
                     <div
@@ -1288,7 +1286,7 @@ export default function ProviderDetail() {
                     </button>
                   ) : null}
                 </div>
-                
+
                 {!limitsEditOpen ? (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div>
@@ -3079,7 +3077,7 @@ export default function ProviderDetail() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="overflow-y-auto">
               <div className="p-8 flex flex-col items-center justify-center bg-gray-50">
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
@@ -3087,7 +3085,7 @@ export default function ProviderDetail() {
                 </div>
                 <div className="mt-6 font-bold text-gray-600 text-xl tracking-wider">#{qrModalCard.key_tag_number}</div>
               </div>
-              
+
               <div className="p-4 sm:p-6 border-t border-gray-100 bg-white">
                 <h4 className="text-sm font-bold text-[#1A3C6E] mb-3 uppercase tracking-wider">Incident History</h4>
                 {loadingQrHistory ? (
@@ -3106,7 +3104,7 @@ export default function ProviderDetail() {
                         </div>
                         <p className="text-sm font-bold text-gray-700 capitalize mb-1">Reported {inc.reason}</p>
                         {inc.note && <p className="text-xs text-gray-500">{inc.note}</p>}
-                        
+
                         {inc.status === "pending" && qrModalCard.status === "pending_incident" && (
                           <div className="flex gap-2 mt-3 pt-3 border-t border-gray-200">
                             <button onClick={() => handleApproveIncident(inc.id)} className="flex-1 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-bold transition">
@@ -3123,7 +3121,7 @@ export default function ProviderDetail() {
                 )}
               </div>
             </div>
-            
+
           </div>
         </div>
       )}

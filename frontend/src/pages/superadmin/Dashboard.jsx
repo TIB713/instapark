@@ -76,10 +76,6 @@ export default function Dashboard() {
           value={stats?.platform_avg_rating ? `${stats.platform_avg_rating}★` : "—"}
           sub="platform average"
           icon={<Star className="w-5 h-5 text-amber-500" />} accent="bg-amber-50" />
-        <StatCard testid="stat-rating-drv" label="Driver Rating" to="/superadmin/events"
-          value={stats?.driver_avg_rating ? `${stats.driver_avg_rating}★` : "—"}
-          sub="driver average"
-          icon={<Star className="w-5 h-5 text-amber-500" />} accent="bg-amber-50" />
       </div>
 
       <div className="mt-6">

@@ -363,7 +363,6 @@ export default function ValetProviderHotelDetail() {
           ["Total Events", s?.total_events ?? 0],
           ["Cars Served", s?.total_cars_served ?? 0],
           ["Platform Rating", s?.platform_avg_rating > 0 ? s.platform_avg_rating + "★" : "-"],
-          ["Driver Rating", s?.driver_avg_rating > 0 ? s.driver_avg_rating + "★" : "-"],
           ["Drivers", drivers.length],
           ["Supervisors", supervisors.length],
         ].map(([label, value]) => `<div class="stat"><div class="stat-val">${value}</div><div class="stat-lbl">${label}</div></div>`).join("")}
@@ -653,7 +652,6 @@ export default function ValetProviderHotelDetail() {
                     { label: "Total Events", value: detail?.stats?.total_events ?? "—", icon: Calendar, tab: "events" },
                     { label: "Cars Served", value: detail?.stats?.total_cars_served ?? "—", icon: Car, tab: "cars" },
                     { label: "Platform Rating", value: detail?.stats?.platform_avg_rating > 0 ? detail.stats.platform_avg_rating + "★" : "—", icon: Star, tab: null },
-                    { label: "Driver Rating", value: detail?.stats?.driver_avg_rating > 0 ? detail.stats.driver_avg_rating + "★" : "—", icon: Star, tab: null },
                     { label: "Drivers", value: detail?.assigned_drivers?.length ?? 0, icon: Users, tab: "drivers" },
                     { label: "Supervisors", value: detail?.assigned_supervisors?.length ?? 0, icon: ShieldCheck, tab: "supervisors" },
                     { label: "Incidents", value: detail?.stats?.incidents ?? "—", icon: AlertTriangle, tab: "incidents" }

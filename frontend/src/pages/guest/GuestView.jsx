@@ -16,14 +16,20 @@ export default function GuestView() {
 
   // Local state only for UX (button loading, show time picker), NOT for navigation
   const [requesting, setRequesting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const [scheduleTime, setScheduleTime] = useState("");
   const [scheduling, setScheduling] = useState(false);
   const [rated, setRated] = useState(false);
   const [platformStars, setPlatformStars] = useState(0);
   const [hoverPlatform, setHoverPlatform] = useState(0);
-  const [driverStars, setDriverStars] = useState(0);
-  const [hoverDriver, setHoverDriver] = useState(0);
+  const [issues, setIssues] = useState({
+    extra_money_asked: false,
+    misbehaved: false,
+    late_arrival: false,
+    vehicle_damaged: false,
+    unauthorized_personal_use: false,
+  });
   const [comment, setComment] = useState("");
   const [eta, setEta] = useState(null);
   const [queuePosition, setQueuePosition] = useState(null);
@@ -54,7 +60,7 @@ export default function GuestView() {
             window.history.replaceState(null, '', `/r/${parsedCar.retrieval_token}`);
           }, 50);
         }
-      } catch {}
+      } catch { }
     }
     setPlateCheckDone(true);
     setLoading(false);
@@ -214,6 +220,19 @@ export default function GuestView() {
     } catch { } finally { setRequesting(false); }
   };
 
+  const handleCancelRetrieval = async () => {
+    if (!car) return;
+    setCancelling(true);
+    try {
+      const { data } = await api.patch(`/cars/${car.id}/cancel-retrieval?retrieval_token=${car.retrieval_token}`);
+      setCar(data);
+    } catch (err) {
+      alert(err.response?.data?.detail || "Could not cancel retrieval. Please try again.");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const scheduleRetrieval = async () => {
     if (!scheduleTime) return;
     setScheduling(true);
@@ -279,7 +298,7 @@ export default function GuestView() {
       await publicApi.post(`/ratings?retrieval_token=${car.retrieval_token}`, {
         car_id: car.id,
         stars: platformStars,
-        driver_stars: driverStars,
+        issues: issues,
         comment: comment.trim() || null
       });
     } catch { }
@@ -428,6 +447,14 @@ export default function GuestView() {
                   )}
                 </div>
                 <div className="p-6 flex flex-col gap-3">
+                  {car?.gps_lat != null && car?.gps_lng != null && (
+                    <button
+                      onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${car.gps_lat},${car.gps_lng}`, "_blank")}
+                      className="w-full rounded-2xl py-3.5 text-sm font-semibold border-2 border-emerald-600 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all"
+                    >
+                      📍 See Where My Car Is Parked
+                    </button>
+                  )}
                   {car?.can_request_retrieval && (
                     <button
                       onClick={handleRequestRetrieval}
@@ -493,8 +520,8 @@ export default function GuestView() {
             data-testid="state-retrieval"
           >
             <div className={`p-6 text-center text-white ${status === "BEING_FETCHED"
-                ? "bg-gradient-to-br from-[#1A3C6E] to-[#0F2044]"
-                : "bg-gradient-to-br from-amber-500 to-amber-600"
+              ? "bg-gradient-to-br from-[#1A3C6E] to-[#0F2044]"
+              : "bg-gradient-to-br from-amber-500 to-amber-600"
               }`}>
               <div className="w-16 h-16 bg-white/20 rounded-full mx-auto
                 flex items-center justify-center backdrop-blur">
@@ -584,6 +611,16 @@ export default function GuestView() {
                 </div>
               )}
 
+              {status === "RETRIEVAL_REQUESTED" && (
+                <button
+                  onClick={handleCancelRetrieval}
+                  disabled={cancelling}
+                  className="w-full rounded-2xl py-3 text-sm font-semibold border border-red-200 text-red-500 hover:bg-red-50 transition-all mb-4 disabled:opacity-60"
+                >
+                  {cancelling ? "Cancelling…" : "✕ Cancel Request"}
+                </button>
+              )}
+
               <div className="relative mt-2">
                 <div className="flex justify-between items-center relative z-10">
                   <div className="flex flex-col items-center w-1/3">
@@ -668,7 +705,7 @@ export default function GuestView() {
         {/* Sub-state B: OTP verified — driver is taking photo and collecting QR card */}
         {status === "ARRIVED_AT_GATE" && car?.otp_verified && (
           <div className="bg-white rounded-3xl shadow-2xl overflow-hidden fade-in-up">
-            
+
             {/* Header */}
             <div className="p-6 text-center text-white bg-gradient-to-br from-emerald-500 to-emerald-600">
               <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center backdrop-blur mb-3">
@@ -768,19 +805,32 @@ export default function GuestView() {
                 </div>
 
                 <div>
-                  <p className="font-bold text-gray-700 mb-1">Driver Performance</p>
-                  <p className="text-gray-400 text-xs mb-3">Rate your valet driver</p>
-                  <div className="flex justify-center gap-2">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        onClick={() => setDriverStars(star)}
-                        onMouseEnter={() => setHoverDriver(star)}
-                        onMouseLeave={() => setHoverDriver(0)}
-                        className="w-12 h-12 rounded-full bg-gray-50 hover:bg-amber-50 flex items-center justify-center transition-colors border border-gray-200 hover:border-amber-300"
-                      >
-                        <Star className={`w-6 h-6 ${star <= (hoverDriver || driverStars) ? "text-amber-400 fill-amber-400" : "text-gray-300"}`} />
-                      </button>
+                  <p className="font-bold text-gray-700 mb-1">Tell us if anything went wrong</p>
+                  <div className="flex flex-col gap-3 mt-3">
+                    {[
+                      { key: 'extra_money_asked', label: 'Did the driver ask for extra money?' },
+                      { key: 'misbehaved', label: 'Was the driver rude or misbehaving?' },
+                      { key: 'late_arrival', label: 'Did the driver arrive late to retrieve your car?' },
+                      { key: 'vehicle_damaged', label: 'Was your vehicle damaged?' },
+                      { key: 'unauthorized_personal_use', label: 'Did you notice the driver using your vehicle without permission?' },
+                    ].map((q) => (
+                      <div key={q.key} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <span className="text-sm text-gray-700">{q.label}</span>
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => setIssues(prev => ({ ...prev, [q.key]: true }))}
+                            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors border ${issues[q.key] === true ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            onClick={() => setIssues(prev => ({ ...prev, [q.key]: false }))}
+                            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors border ${issues[q.key] === false ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
+                          >
+                            No
+                          </button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -796,7 +846,7 @@ export default function GuestView() {
 
                 <button
                   onClick={rate}
-                  disabled={!platformStars || !driverStars}
+                  disabled={!platformStars}
                   className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 >
                   Submit Rating

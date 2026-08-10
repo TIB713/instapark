@@ -122,12 +122,7 @@ export default function OwnerHotelDetail() {
                   {s.platform_avg_rating > 0 ? `${s.platform_avg_rating}★` : "—"}
                 </div>
               </div>
-              <div className="bg-amber-50 rounded-xl p-4">
-                <div className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Driver Rating</div>
-                <div className="font-heading text-2xl font-bold text-amber-700 mt-1 flex items-center gap-1">
-                  {s.driver_avg_rating > 0 ? `${s.driver_avg_rating}★` : "—"}
-                </div>
-              </div>
+
               <div className="bg-indigo-50 rounded-xl p-4">
                 <div className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Valet Slots</div>
                 <div className="font-heading text-2xl font-bold text-indigo-700 mt-1">{hotel.total_valet_slots || 0}</div>

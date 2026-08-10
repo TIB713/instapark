@@ -300,8 +300,6 @@ export default function DriverDetail() {
             ["Retrievals", s.total_retrievals],
             ["Platform Rating", s.platform_avg_rating > 0
               ? s.platform_avg_rating + "★" : "—"],
-            ["Driver Rating", s.driver_avg_rating > 0
-              ? s.driver_avg_rating + "★" : "—"],
             ["Incidents", s.total_incidents],
           ].map(([label, value]) => `
             <div class="stat">

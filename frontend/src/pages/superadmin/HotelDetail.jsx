@@ -450,7 +450,6 @@ export default function HotelDetail() {
           ["Total Events", s?.total_events ?? 0],
           ["Cars Served", s?.total_cars_served ?? 0],
           ["Platform Rating", s?.platform_avg_rating > 0 ? s.platform_avg_rating + "★" : "-"],
-          ["Driver Rating", s?.driver_avg_rating > 0 ? s.driver_avg_rating + "★" : "-"],
           ["Drivers", drivers.length],
           ["Supervisors", supervisors.length],
         ].map(([label, value]) => `<div class="stat"><div class="stat-val">${value}</div><div class="stat-lbl">${label}</div></div>`).join("")}
@@ -980,13 +979,7 @@ export default function HotelDetail() {
                     </div>
                     <div className="text-lg font-black text-white">{detail?.stats?.platform_avg_rating ? `${detail.stats.platform_avg_rating}/5` : "—"}</div>
                   </div>
-                  <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 flex flex-col items-center gap-1">
-                    <div className="flex items-center gap-1 text-amber-400">
-                      <Star className="w-3 h-3" />
-                      <div className="text-[8px] uppercase font-bold text-white/40 tracking-wider">Driver Rating</div>
-                    </div>
-                    <div className="text-lg font-black text-white">{detail?.stats?.driver_avg_rating ? `${detail.stats.driver_avg_rating}/5` : "—"}</div>
-                  </div>
+
                 </div>
               </div>
             </div>
