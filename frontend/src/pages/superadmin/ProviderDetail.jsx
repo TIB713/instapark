@@ -272,6 +272,73 @@ export default function ProviderDetail() {
   const [hotelSearch, setHotelSearch] = useState("");
   const [hotelStatusFilter, setHotelStatusFilter] = useState("All");
 
+  const handleDownloadSample = async () => {
+    try {
+      const res = await api.get("/drivers/bulk-template", { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "driver_bulk_template.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Failed to download sample template");
+    }
+  };
+
+  const handleBulkUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("provider_id", id);
+    
+    try {
+      const { data } = await api.post("/drivers/bulk-upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      const warnedCount = (data.results || []).filter(r => r.status === "Added (with warnings)").length;
+        let msg = `Inserted: ${data.inserted}`;
+        if (warnedCount > 0) {
+          msg += ` (${warnedCount} with warnings — check the downloaded file for details)`;
+        }
+        msg += `\nSkipped: ${data.skipped}`;
+      toast.success(msg);
+      
+      let csv = "Row,Name,Phone,Status,Reason\n";
+      (data.results || []).forEach(r => {
+        csv += `${r.row},"${r.name || ""}","${r.phone || ""}",${r.status},"${r.reason || ""}"\n`;
+      });
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bulk_upload_result_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Upload failed");
+    }
+    e.target.value = "";
+  };
+
+  const handleActivateDriver = async (did, e) => {
+    e.stopPropagation();
+    try {
+      await api.patch(`/drivers/${did}/activate`);
+      toast.success("Driver activated");
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to activate");
+    }
+  };
+
   const filteredDrivers = useMemo(() => {
     return (p?.drivers || []).filter(d => {
       const matchSearch = !driverSearch || `${d.name} ${d.employee_id}`.toLowerCase().includes(driverSearch.toLowerCase());
@@ -1641,6 +1708,13 @@ export default function ProviderDetail() {
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input value={driverSearch} onChange={e => { setDriverSearch(e.target.value); setDriversPage(1); }} placeholder="Search by name or employee ID..." className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#1A3C6E]" />
                 </div>
+                <button type="button" onClick={handleDownloadSample} className="inline-flex items-center gap-1.5 bg-white border border-[#1A3C6E] text-[#1A3C6E] hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm font-medium transition">
+                  Sample
+                </button>
+                <label className="inline-flex items-center gap-1.5 bg-[#1A3C6E] hover:bg-[#0F2044] text-white px-3 py-1.5 rounded-lg text-sm font-medium transition cursor-pointer">
+                  Bulk Add
+                  <input type="file" className="hidden" accept=".xlsx" onChange={handleBulkUpload} />
+                </label>
                 <button onClick={() => { setDriverModal(true); setTimeout(() => { const el = document.getElementById('modal-add-driver'); if (el) el.scrollTop = 0; }, 50); }}
                   className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition">
                   <Plus className="w-4 h-4" /> Add Driver
@@ -1690,6 +1764,14 @@ export default function ProviderDetail() {
                         <td className="px-5 py-3 font-mono text-gray-600">{d.employee_id}</td>
                         <td className="px-5 py-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${d.is_active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{d.is_active ? "Active" : "Inactive"}</span>
+                          <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${d.is_verified ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-amber-50 text-amber-600 border border-amber-200"}`}>
+                            {d.is_verified ? "Verified" : "Unverified"}
+                          </span>
+                          {!d.is_active && (
+                            <button onClick={(e) => handleActivateDriver(d.id, e)} className="ml-2 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100">
+                              Activate
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1772,6 +1854,9 @@ export default function ProviderDetail() {
                         <td className="px-5 py-3 text-gray-600">{s.email}</td>
                         <td className="px-5 py-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.is_active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{s.is_active ? "Active" : "Inactive"}</span>
+                          <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${s.is_verified ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-amber-50 text-amber-600 border border-amber-200"}`}>
+                            {s.is_verified ? "Verified" : "Unverified"}
+                          </span>
                         </td>
                       </tr>
                     ))}

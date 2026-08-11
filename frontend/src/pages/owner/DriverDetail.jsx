@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo , useRef} from 'react';
 import { Link, useParams, useNavigate } from "react-router-dom";
-import SuperLayout from "@/components/layout/SuperLayout";
+import OwnerLayout from "@/components/layout/OwnerLayout";
 import { api, decodeJwt } from "@/lib/api";
 import { fmtDate, fmtDateTime, fmtDateTimeFull } from "@/lib/time";
 import { toast } from "sonner";
@@ -65,9 +65,9 @@ export default function DriverDetail() {
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox]);
 
-  const token = localStorage.getItem("superadmin_token");
+  const token = localStorage.getItem("owner_token");
   const userObj = token ? decodeJwt(token) : null;
-  const isSuperadmin = userObj?.role === "superadmin";
+  
 
 
   useEffect(() => {
@@ -93,9 +93,9 @@ export default function DriverDetail() {
   const handleDelete = async () => {
     if (!window.confirm("WARNING: This will permanently delete this driver and cannot be undone. Are you sure?")) return;
     try {
-      await api.delete(`/superadmin/drivers/${did}/permanent`);
+      await api.delete(`/drivers/${did}/permanent`);
       toast.success("Driver permanently deleted");
-      nav("/superadmin/drivers");
+      nav("/provider/team");
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to delete driver");
     }
@@ -263,7 +263,7 @@ export default function DriverDetail() {
         <h1>${d.name}</h1>
         <p>${d.employee_id} · ${d.phone}
           · ${d.email || "No email"}</p>
-        <p>Provider: ${d.provider_name || "—"}</p>
+        
         <div class="detail-grid">
           ${d.driving_license_number ? `
           <div class="detail-item">
@@ -496,18 +496,18 @@ export default function DriverDetail() {
   const paginatedIncidents = filteredIncidents.slice((incidentsPage - 1) * 10, incidentsPage * 10);
 
   if (loading) return (
-    <SuperLayout title="Driver Detail">
+    <OwnerLayout title="Driver Detail">
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="w-10 h-10 rounded-full border-4 border-[#1A3C6E] border-t-transparent animate-spin" />
         <p className="text-gray-400 text-sm font-medium">Loading...</p>
       </div>
-    </SuperLayout>
+    </OwnerLayout>
   );
-  if (!driver) return <SuperLayout title="Driver Detail"><div className="p-8 text-center text-gray-400">Driver not found</div></SuperLayout>;
+  if (!driver) return <OwnerLayout title="Driver Detail"><div className="p-8 text-center text-gray-400">Driver not found</div></OwnerLayout>;
 
   return (
-    <SuperLayout title="Driver Detail">
-      <Link to="/superadmin/drivers"
+    <OwnerLayout title="Driver Detail">
+      <Link to="/provider/team"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-[#1A3C6E] hover:text-[#0F2044] mb-6 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Back to Drivers
       </Link>
@@ -562,9 +562,7 @@ export default function DriverDetail() {
                   <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${driver.is_active ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30" : "bg-red-500/20 text-red-300 border border-red-400/30"}`}>
                     {driver.is_active ? "Active" : "Inactive"}
                   </span>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white/10 text-white/90 border border-white/20 truncate">
-                    {driver.provider_name || "—"}
-                  </span>
+
                 </div>
                 <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest mt-0.5">Employee ID: {driver.employee_id}</p>
                 
@@ -610,14 +608,12 @@ export default function DriverDetail() {
               >
                 {driver.is_active ? "Inactive" : "Active"}
               </button>
-              {isSuperadmin && (
-                <button
-                  onClick={handleDelete}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/20 text-red-100 hover:bg-red-500/40 transition text-sm font-semibold border border-red-400/30"
-                >
-                  <Trash2 className="w-4 h-4" /> Delete
-                </button>
-              )}
+              <button
+                onClick={handleDelete}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/20 text-red-100 hover:bg-red-500/40 transition text-sm font-semibold border border-red-400/30"
+              >
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
             </div>
           </div>
         </div>
@@ -823,12 +819,10 @@ export default function DriverDetail() {
                 <input value={editForm.aadhar_number || ""} inputMode="numeric" onChange={e => { setEditForm({...editForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12)}); if (editErrors.aadhar_number) setEditErrors(prev => ({ ...prev, aadhar_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                 {editErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.aadhar_number}</p>}
               </div>
-              {isSuperadmin && (
-                <div>
+              <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">New PIN (leave blank to keep current)</label>
                   <input value={editForm.pin || ""} onChange={e => setEditForm({...editForm, pin: e.target.value})} maxLength={4} pattern="[0-9]{4}" className="w-full font-mono px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]" />
                 </div>
-              )}
             </div>
 
             <div> 
@@ -1295,6 +1289,6 @@ export default function DriverDetail() {
           />
         </div>
       )}
-    </SuperLayout>
+    </OwnerLayout>
   );
 }

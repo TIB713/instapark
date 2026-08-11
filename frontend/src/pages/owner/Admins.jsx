@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import OwnerLayout from "@/components/layout/OwnerLayout";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { ShieldCheck, Plus, Search, User, Mail, AlertTriangle, Edit2, Check, X } from "lucide-react";
+import { ShieldCheck, Plus, Search, User, Mail, AlertTriangle, Edit2, Check, X, Trash2 } from "lucide-react";
 import SkeletonTable from "@/components/ui/SkeletonTable";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -18,8 +18,11 @@ export default function OwnerAdmins() {
   const [formData, setFormData] = useState({ name: "", email: "", phone: "" });
   const [saving, setSaving] = useState(false);
 
+  const [showEditModal, setShowEditModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [editName, setEditName] = useState("");
+  const [editFormData, setEditFormData] = useState({ name: "", email: "", phone: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editErrors, setEditErrors] = useState({});
   const [errors, setErrors] = useState({});
 
   const loadAdmins = async () => {
@@ -88,20 +91,55 @@ export default function OwnerAdmins() {
     }
   };
 
-  const startEdit = (admin) => {
-    setEditingId(admin.id);
-    setEditName(admin.name);
+  const handleDelete = async (id) => {
+    if (!window.confirm("Permanently delete this admin? This cannot be undone.")) return;
+    try {
+      await api.delete(`/providers/${id}/permanent`);
+      toast.success("Admin deleted");
+      loadAdmins();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to delete admin");
+    }
   };
 
-  const saveEdit = async (id) => {
-    if (!editName.trim()) return toast.error("Name cannot be empty");
+  const startEdit = (admin) => {
+    setEditingId(admin.id);
+    setEditFormData({ name: admin.name || "", email: admin.email || "", phone: admin.phone || "" });
+    setEditErrors({});
+    setShowEditModal(true);
+  };
+
+  const validateEdit = () => {
+    const errs = {};
+    if (!editFormData.name.trim()) errs.name = "Name is required";
+    if (!editFormData.email.trim()) errs.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editFormData.email.trim())) errs.email = "Enter a valid email address";
+    if (!editFormData.phone.trim()) errs.phone = "Phone number is required";
+    else if (!/^\d{10}$/.test(editFormData.phone.trim())) errs.phone = "Phone must be exactly 10 digits";
+    return errs;
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    const errs = validateEdit();
+    setEditErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    setEditSaving(true);
     try {
-      await api.patch(`/providers/${id}`, { name: editName.trim() });
-      toast.success("Admin updated");
+      await api.patch(`/providers/${editingId}`, { 
+        name: editFormData.name.trim(),
+        email: editFormData.email.trim().toLowerCase(),
+        phone: editFormData.phone.trim()
+      });
+      toast.success("Admin updated successfully!");
+      setShowEditModal(false);
       setEditingId(null);
       loadAdmins();
-    } catch {
-      toast.error("Failed to update admin");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to update admin");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -152,16 +190,7 @@ export default function OwnerAdmins() {
                 {filtered.map(admin => (
                   <tr key={admin.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
-                      {editingId === admin.id ? (
-                        <div className="flex items-center gap-2">
-                          <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                            className="px-2 py-1 text-sm rounded border border-gray-300 outline-none focus:border-[#1A3C6E]" />
-                          <button onClick={() => saveEdit(admin.id)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"><Check className="w-4 h-4" /></button>
-                          <button onClick={() => setEditingId(null)} className="p-1 text-red-600 hover:bg-red-50 rounded"><X className="w-4 h-4" /></button>
-                        </div>
-                      ) : (
-                        <div className="font-semibold text-[#0F2044]">{admin.name}</div>
-                      )}
+                      <div className="font-semibold text-[#0F2044]">{admin.name}</div>
                     </td>
                     <td className="px-6 py-4 text-gray-600 flex items-center gap-2">
                       <Mail className="w-3.5 h-3.5 text-gray-400" /> {admin.email}
@@ -186,6 +215,12 @@ export default function OwnerAdmins() {
                           title={admin.is_active !== false ? "Deactivate" : "Reactivate"}
                         >
                           <AlertTriangle className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleDelete(admin.id)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
+                          title="Delete Admin"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -250,6 +285,59 @@ export default function OwnerAdmins() {
           </div>
         </div>
       )}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowEditModal(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden fade-in-up" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b border-gray-100 bg-[#0F2044] text-white flex justify-between items-center">
+              <h2 className="font-heading text-lg font-bold">Edit Admin</h2>
+              <button onClick={() => { setShowEditModal(false); setEditErrors({}); }} className="text-white/60 hover:text-white transition"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleSaveEdit} className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Full Name <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="text" value={editFormData.name} onChange={e => { setEditFormData({ ...editFormData, name: e.target.value }); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }}
+                      className={`w-full pl-9 pr-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${editErrors.name ? "border-red-400" : "border-gray-200"}`} placeholder="Jane Doe" />
+                  </div>
+                  {editErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.name}</p>}
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Email Address <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="email" value={editFormData.email} onChange={e => { setEditFormData({ ...editFormData, email: e.target.value }); if (editErrors.email) setEditErrors(prev => ({ ...prev, email: undefined })); }}
+                      className={`w-full pl-9 pr-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${editErrors.email ? "border-red-400" : "border-gray-200"}`} placeholder="jane@example.com" />
+                  </div>
+                  {editErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.email}</p>}
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Phone Number <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input type="text" value={editFormData.phone} onChange={e => { setEditFormData({ ...editFormData, phone: e.target.value }); if (editErrors.phone) setEditErrors(prev => ({ ...prev, phone: undefined })); }}
+                      className={`w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${editErrors.phone ? "border-red-400" : "border-gray-200"}`} placeholder="1234567890" maxLength={10} />
+                  </div>
+                  {editErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.phone}</p>}
+                </div>
+              </div>
+              <div className="mt-8 flex items-center justify-end gap-3">
+                <button type="button" onClick={() => { setShowEditModal(false); setEditErrors({}); }} className="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-100">Cancel</button>
+                <button type="submit" disabled={editSaving} className="btn-primary-navy px-6 py-2 rounded-xl text-sm font-bold shadow-md disabled:opacity-60 flex items-center gap-2">
+                  {editSaving ? <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" /> : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </OwnerLayout>
   );
 }

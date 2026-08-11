@@ -39,6 +39,8 @@ import OwnerCars from "@/pages/owner/Cars";
 import OwnerCarDetail from "@/pages/owner/CarDetail";
 import OwnerIncidents from "@/pages/owner/Incidents";
 import OwnerTeam from "@/pages/owner/Team";
+import OwnerDriverDetail from "@/pages/owner/DriverDetail";
+import OwnerSupervisorDetail from "@/pages/owner/SupervisorDetail";
 import OwnerAdmins from "@/pages/owner/Admins";
 import OwnerQrCodes from "@/pages/owner/QrCodes";
 
@@ -92,6 +94,8 @@ function App() {
           <Route path="/provider/qr-codes" element={<RequireOwnerAuth><OwnerQrCodes /></RequireOwnerAuth>} />
           <Route path="/provider/incidents" element={<RequireOwnerAuth><OwnerIncidents /></RequireOwnerAuth>} />
           <Route path="/provider/team" element={<RequireOwnerAuth><OwnerTeam /></RequireOwnerAuth>} />
+          <Route path="/provider/drivers/:did" element={<RequireOwnerAuth><OwnerDriverDetail /></RequireOwnerAuth>} />
+          <Route path="/provider/supervisors/:sid" element={<RequireOwnerAuth><OwnerSupervisorDetail /></RequireOwnerAuth>} />
           <Route path="/provider/admins" element={<RequireOwnerAuth><OwnerAdmins /></RequireOwnerAuth>} />
           <Route path="/provider" element={<Navigate to="/provider/dashboard" replace />} />
 
