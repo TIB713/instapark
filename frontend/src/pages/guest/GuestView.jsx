@@ -60,6 +60,15 @@ export default function GuestView() {
             window.history.replaceState(null, '', `/r/${parsedCar.retrieval_token}`);
           }, 50);
         }
+
+        if (parsedCar.retrieval_token) {
+          publicApi.get(`/retrieval/${parsedCar.retrieval_token}`)
+            .then(({ data }) => {
+              setCar(data);
+              sessionStorage.setItem(`guest_car_${token}`, JSON.stringify(data));
+            })
+            .catch(() => {});
+        }
       } catch { }
     }
     setPlateCheckDone(true);

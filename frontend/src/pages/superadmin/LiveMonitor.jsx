@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import SuperLayout from "@/components/layout/SuperLayout";
 import { api, WS_BASE } from "@/lib/api";
-import { fmtDateTime } from "@/lib/time";
+import { fmtDateTime, fmtDuration } from "@/lib/time";
 import StatusBadge from "@/components/ui/StatusBadge";
 import { toast } from "sonner";
 import { Car, Clock, AlertTriangle, ParkingSquare, Search, ChevronRight, ArrowLeft } from "lucide-react";
@@ -262,7 +262,7 @@ export default function LiveMonitor() {
                               <td className="px-4 py-3">
                                 {car.minutes_in_current_status != null ? (
                                   <span className={isLate ? "text-red-600 font-bold" : "text-gray-500"}>
-                                    {car.minutes_in_current_status} min
+                                    {fmtDuration(car.minutes_in_current_status)}
                                   </span>
                                 ) : "—"}
                               </td>

@@ -220,7 +220,7 @@ export default function Events() {
                     </td>
                     <td className="px-5 py-3">
                       {(() => {
-                        const cars = e.cars_count ?? 0;
+                        const cars = e.occupied_slots || 0;
                         const max = Number(e.max_cars) || 0;
                         const rawPct = max > 0 ? (cars / max) * 100 : 0;
                         const pct = Math.max(0, Math.min(100, rawPct));
@@ -232,8 +232,15 @@ export default function Events() {
                             : "bg-emerald-500";
                         return (
                           <div className="min-w-[130px]">
-                            <div className="text-xs font-bold text-gray-700">
-                              {cars} / {max}
+                            <div className="flex flex-col gap-0.5">
+                              <div className="text-xs font-bold text-gray-700">
+                                {cars} / {max}
+                              </div>
+                              {e.carried_forward_count > 0 && (
+                                <div className="text-[10px] text-amber-600 font-semibold leading-tight">
+                                  {e.carried_forward_count} held over from yesterday
+                                </div>
+                              )}
                             </div>
                             <div className="mt-1.5 h-1.5 rounded-full bg-gray-100 overflow-hidden">
                               <div

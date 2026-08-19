@@ -5,12 +5,7 @@ import { State, City } from "country-state-city";
 import { api } from "@/lib/api";
 import { fmtDate, fmtDateTimeFull } from "@/lib/time";
 import { toast } from "sonner";
-import {
-  ArrowLeft, Building2, MapPin, Phone, Mail, Clock,
-  Car, Star, Calendar, Edit2, Save, X, Camera, Plus,
-  Trash2, User, Users, ShieldCheck, CheckCircle2, Check,
-  QrCode, Copy, Download, Upload, Search, ChevronDown, Radio, AlertTriangle
-} from "lucide-react";
+import { ArrowLeft, Building2, MapPin, Phone, Mail, Clock, Car, Star, Calendar, Edit2, Save, X, Camera, Plus, Trash2, User, Users, ShieldCheck, CheckCircle2, Check, QrCode, Copy, Download, Upload, Search, ChevronDown, Radio, AlertTriangle, CheckCircle } from "lucide-react";
 import EmptyState from "@/components/ui/EmptyState";
 import SkeletonTable from "@/components/ui/SkeletonTable";
 import { QRCodeSVG } from "qrcode.react";
@@ -19,9 +14,22 @@ const generateTempPassword = () => Math.random().toString(36).slice(-10) + Math.
 import * as XLSX from "xlsx";
 import StatusBadge from "@/components/ui/StatusBadge";
 
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
+
 export default function HotelDetail() {
   const { hid } = useParams();
   const nav = useNavigate();
+  const hotelFieldRefs = useRef({});
+  const scrollToFirstHotelError = useScrollToFirstError(["name", "address", "state", "city", "contact_person_name", "contact_person_phone", "contact_person_email", "total_valet_slots", "provider_email", "provider_password", "provider_confirm_password"], hotelFieldRefs);
+
+  const eventFieldRefs = useRef({});
+  const scrollToFirstEventError = useScrollToFirstError(["name", "host_email", "date", "end_date", "venue", "start_time", "end_time", "max_cars"], eventFieldRefs);
+
+  const driverFieldRefs = useRef({});
+  const scrollToFirstDriverError = useScrollToFirstError(["name", "phone", "pin", "email", "gender", "pan_number", "bank_account_number", "bank_ifsc", "driving_license_number", "aadhar_number", "licensePhoto", "drvAadharPhoto"], driverFieldRefs);
+
+  const supervisorFieldRefs = useRef({});
+  const scrollToFirstSupervisorError = useScrollToFirstError(["name", "phone", "email", "gender", "password", "confirmPassword", "pan_number", "bank_account_number", "bank_ifsc", "aadhar_number", "supAadharPhoto"], supervisorFieldRefs);
   const [hotel, setHotel] = useState(null);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -121,6 +129,7 @@ export default function HotelDetail() {
     state: "",
     total_valet_slots: "",
     gate_timer_minutes: "",
+    allow_instant_park: false,
     contact_person_name: "",
     contact_person_phone: "",
     contact_person_email: "",
@@ -191,7 +200,10 @@ export default function HotelDetail() {
     e.preventDefault();
     const errs = validateEvent();
     setEventErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstEventError(errs);
+      return;
+    }
     if (totalEventSlots > eventForm.max_cars) {
       toast.error(`Total zone slots (${totalEventSlots}) cannot exceed max cars (${eventForm.max_cars}). Reduce zone slots.`);
       return;
@@ -255,6 +267,7 @@ export default function HotelDetail() {
         state: h.state || "",
         total_valet_slots: h.total_valet_slots || "",
         gate_timer_minutes: h.gate_timer_minutes || "",
+        allow_instant_park: !!h.allow_instant_park,
         contact_person_name: h.contact_person_name || "",
         contact_person_phone: h.contact_person_phone || "",
         contact_person_email: h.contact_person_email || "",
@@ -516,7 +529,10 @@ export default function HotelDetail() {
     e.preventDefault();
     const errs = validateEdit();
     setEditErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstHotelError(errs);
+      return;
+    }
     try {
       const body = {
         name: editForm.name,
@@ -525,6 +541,7 @@ export default function HotelDetail() {
         state: editForm.state,
         total_valet_slots: parseInt(editForm.total_valet_slots),
         gate_timer_minutes: editForm.gate_timer_minutes ? parseInt(editForm.gate_timer_minutes) : null,
+        allow_instant_park: editForm.allow_instant_park,
         contact_person_name: editForm.contact_person_name,
         contact_person_phone: editForm.contact_person_phone,
         contact_person_email: editForm.contact_person_email || null,
@@ -709,7 +726,10 @@ export default function HotelDetail() {
     e.preventDefault();
     const errs = validateDriver();
     setDriverErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstDriverError(errs);
+      return;
+    }
 
     setSavingDriver(true);
     try {
@@ -771,7 +791,10 @@ export default function HotelDetail() {
     e.preventDefault();
     const errs = validateSupervisor();
     setSupervisorErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstSupervisorError(errs);
+      return;
+    }
 
     setSavingSupervisor(true);
     try {
@@ -926,7 +949,7 @@ export default function HotelDetail() {
                   </span>
                   {hotel?.provider_is_verified ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
-                      <Check className="w-3 h-3" /> Verified
+                      <CheckCircle className="w-3 h-3" /> Verified
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
@@ -1187,7 +1210,7 @@ export default function HotelDetail() {
                 <form onSubmit={handleSaveHotel} className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Name</label>
-                    <input
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.name = el; }} 
                       type="text"
                       value={editForm.name}
                       onChange={(e) => { setEditForm({ ...editForm, name: e.target.value}); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }}
@@ -1197,7 +1220,7 @@ export default function HotelDetail() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Address</label>
-                    <input
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.address = el; }} 
                       type="text"
                       value={editForm.address}
                       onChange={(e) => { setEditForm(prev => ({ ...prev, address: e.target.value})); if (editErrors.address) setEditErrors(prev => ({ ...prev, address: undefined })); }}
@@ -1208,7 +1231,7 @@ export default function HotelDetail() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">State <span className="text-red-500">*</span></label>
-                      <select
+                      <select ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.state = el; }} 
                         value={editForm.state || ""}
                         onChange={e => { setEditForm(prev => ({ ...prev, state: e.target.value, city: "" })); if (editErrors.state) setEditErrors(prev => ({ ...prev, state: undefined })); }}
                         className={`w-full px-4 py-2 rounded-xl border ${editErrors.state ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
@@ -1222,7 +1245,7 @@ export default function HotelDetail() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">City <span className="text-red-500">*</span></label>
-                      <select
+                      <select ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.city = el; }} 
                         value={editForm.city || ""}
                         onChange={e => { setEditForm(prev => ({ ...prev, city: e.target.value })); if (editErrors.city) setEditErrors(prev => ({ ...prev, city: undefined })); }}
                         disabled={!editForm.state}
@@ -1241,7 +1264,7 @@ export default function HotelDetail() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Total Valet Slots</label>
-                    <input
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.total_valet_slots = el; }} 
                       type="number"
                       min={1}
                       value={editForm.total_valet_slots}
@@ -1264,6 +1287,15 @@ export default function HotelDetail() {
                     <p className="text-xs text-gray-400 mt-1">Default timer for this hotel's daily and special events.</p>
                   </div>
 
+                  <div className="col-span-1 md:col-span-2 flex items-center gap-2 mb-2">
+                    <input type="checkbox" id="edit_allow_instant_park" checked={editForm.allow_instant_park}
+                           onChange={(e) => setEditForm(prev => ({ ...prev, allow_instant_park: e.target.checked }))}
+                           className="w-4 h-4 rounded text-[#1D4ED8] focus:ring-[#1D4ED8]" />
+                    <label htmlFor="edit_allow_instant_park" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
+                      Allow Instant Park for this hotel's events
+                    </label>
+                  </div>
+
                   <div className="col-span-1 md:col-span-2 pt-6 pb-2 border-t border-gray-100">
                     <h3 className="text-sm font-bold text-[#0F2044] uppercase tracking-wider">Login Credentials</h3>
                   </div>
@@ -1271,7 +1303,7 @@ export default function HotelDetail() {
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                       Login Email<span className="text-red-500"> *</span>
                     </label>
-                    <input
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_email = el; }} 
                       type="email"
                       value={editForm.provider_email}
                       onChange={(e) => { setEditForm({ ...editForm, provider_email: e.target.value}); if (editErrors.provider_email) setEditErrors(prev => ({ ...prev, provider_email: undefined })); }}
@@ -1285,7 +1317,7 @@ export default function HotelDetail() {
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                       New Password (leave blank to keep current)
                     </label>
-                    <input
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_password = el; }} 
                       type="password"
                       value={editForm.provider_password}
                       onChange={(e) => { setEditForm({ ...editForm, provider_password: e.target.value}); if (editErrors.provider_password) setEditErrors(prev => ({ ...prev, provider_password: undefined })); }}
@@ -1298,7 +1330,7 @@ export default function HotelDetail() {
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                         Confirm Password<span className="text-red-500"> *</span>
                       </label>
-                      <input
+                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_confirm_password = el; }} 
                         type="password"
                         value={editForm.provider_confirm_password}
                         onChange={(e) => { setEditForm({ ...editForm, provider_confirm_password: e.target.value}); if (editErrors.provider_confirm_password) setEditErrors(prev => ({ ...prev, provider_confirm_password: undefined })); }}
@@ -1312,7 +1344,7 @@ export default function HotelDetail() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Contact Person Name</label>
-                    <input
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_name = el; }} 
                       type="text"
                       value={editForm.contact_person_name}
                       onChange={(e) => { setEditForm({ ...editForm, contact_person_name: e.target.value}); if (editErrors.contact_person_name) setEditErrors(prev => ({ ...prev, contact_person_name: undefined })); }}
@@ -1323,7 +1355,7 @@ export default function HotelDetail() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone</label>
-                      <input
+                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_phone = el; }} 
                         type="text"
                         value={editForm.contact_person_phone}
                         onChange={(e) => { setEditForm({ ...editForm, contact_person_phone: e.target.value}); if (editErrors.contact_person_phone) setEditErrors(prev => ({ ...prev, contact_person_phone: undefined })); }}
@@ -1333,7 +1365,7 @@ export default function HotelDetail() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email</label>
-                      <input
+                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_email = el; }} 
                         type="email"
                         value={editForm.contact_person_email}
                         onChange={(e) => { setEditForm({ ...editForm, contact_person_email: e.target.value}); if (editErrors.contact_person_email) setEditErrors(prev => ({ ...prev, contact_person_email: undefined })); }}
@@ -2198,7 +2230,7 @@ export default function HotelDetail() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Event Name <span className="text-red-500">*</span></label>
-                  <input type="text" value={eventForm.name}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.name = el; }}  type="text" value={eventForm.name}
                     onChange={e => { setEventForm(prev => ({ ...prev, name: e.target.value})); if (eventErrors.name) setEventErrors(prev => ({ ...prev, name: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     placeholder="e.g. New Year Gala" />
@@ -2214,7 +2246,7 @@ export default function HotelDetail() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Host Email (Optional)</label>
-                  <input type="email" value={eventForm.host_email}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.host_email = el; }}  type="email" value={eventForm.host_email}
                     onChange={e => { setEventForm(prev => ({ ...prev, host_email: e.target.value})); if (eventErrors.host_email) setEventErrors(prev => ({ ...prev, host_email: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.host_email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     placeholder="e.g. host@example.com" />
@@ -2222,35 +2254,35 @@ export default function HotelDetail() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Start Date <span className="text-red-500">*</span></label>
-                  <input type="date" value={eventForm.date}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.date = el; }}  type="date" value={eventForm.date}
                     onChange={e => { setEventForm(prev => ({ ...prev, date: e.target.value})); if (eventErrors.date) setEventErrors(prev => ({ ...prev, date: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { eventErrors.date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.date}</p> }
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Date <span className="text-red-500">*</span></label>
-                  <input type="date" value={eventForm.end_date}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.end_date = el; }}  type="date" value={eventForm.end_date}
                     onChange={e => { setEventForm(prev => ({ ...prev, end_date: e.target.value})); if (eventErrors.end_date) setEventErrors(prev => ({ ...prev, end_date: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.end_date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { eventErrors.end_date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.end_date}</p> }
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Start Time <span className="text-red-500">*</span></label>
-                  <input type="time" value={eventForm.start_time}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.start_time = el; }}  type="time" value={eventForm.start_time}
                     onChange={e => { setEventForm(prev => ({ ...prev, start_time: e.target.value})); if (eventErrors.start_time) setEventErrors(prev => ({ ...prev, start_time: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.start_time ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { eventErrors.start_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.start_time}</p> }
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Time <span className="text-red-500">*</span></label>
-                  <input type="time" value={eventForm.end_time}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.end_time = el; }}  type="time" value={eventForm.end_time}
                     onChange={e => { setEventForm(prev => ({ ...prev, end_time: e.target.value})); if (eventErrors.end_time) setEventErrors(prev => ({ ...prev, end_time: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.end_time ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { eventErrors.end_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.end_time}</p> }
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Cars <span className="text-red-500">*</span></label>
-                  <input type="number" min="1" value={eventForm.max_cars}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.max_cars = el; }}  type="number" min="1" value={eventForm.max_cars}
                     onChange={e => { setEventForm(prev => ({ ...prev, max_cars: parseInt(e.target.value) || 0})); if (eventErrors.max_cars) setEventErrors(prev => ({ ...prev, max_cars: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.max_cars ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { eventErrors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.max_cars}</p> }
@@ -2304,7 +2336,7 @@ export default function HotelDetail() {
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Venue</label>
-                  <input type="text" value={eventForm.venue}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.venue = el; }}  type="text" value={eventForm.venue}
                     onChange={e => { setEventForm(prev => ({ ...prev, venue: e.target.value})); if (eventErrors.venue) setEventErrors(prev => ({ ...prev, venue: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.venue ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     placeholder="Venue name or location" />
@@ -2424,21 +2456,21 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Name <span className="text-red-500">*</span></label>
-                    <input type="text" value={driverForm.name}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.name = el; }}  type="text" value={driverForm.name}
                       onChange={e => { setDriverForm({ ...driverForm, name: e.target.value}); if (driverErrors.name) setDriverErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
 { driverErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.name}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone <span className="text-red-500">*</span></label>
-                    <input type="tel" value={driverForm.phone} inputMode="numeric"
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.phone = el; }}  type="tel" value={driverForm.phone} inputMode="numeric"
                       onChange={e => { setDriverForm({ ...driverForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10)}); if (driverErrors.phone) setDriverErrors(prev => ({ ...prev, phone: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { driverErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.phone}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">4-Digit PIN <span className="text-red-500">*</span></label>
-                    <input type="text" value={driverForm.pin}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.pin = el; }}  type="text" value={driverForm.pin}
                       onChange={e => { setDriverForm({ ...driverForm, pin: e.target.value.replace(/\D/g, "").slice(0, 4)}); if (driverErrors.pin) setDriverErrors(prev => ({ ...prev, pin: undefined })); }}
                       placeholder="e.g. 1234"
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.pin ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono tracking-widest`} />
@@ -2448,14 +2480,14 @@ export default function HotelDetail() {
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                       Email <span className="text-red-500">*</span>
                     </label>
-                    <input type="email" value={driverForm.email}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.email = el; }}  type="email" value={driverForm.email}
                       onChange={e => { setDriverForm({ ...driverForm, email: e.target.value}); if (driverErrors.email) setDriverErrors(prev => ({ ...prev, email: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
 { driverErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.email}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
-                    <select value={driverForm.gender}
+                    <select ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.gender = el; }}  value={driverForm.gender}
                       onChange={e => { setDriverForm({ ...driverForm, gender: e.target.value}); if (driverErrors.gender) setDriverErrors(prev => ({ ...prev, gender: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`}>
                       <option value="" disabled>Select gender</option>
@@ -2475,7 +2507,7 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
-                    <input type="text" placeholder="ABCDE1234F" value={driverForm.pan_number}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.pan_number = el; }}  type="text" placeholder="ABCDE1234F" value={driverForm.pan_number}
                       onChange={e => { setDriverForm({ ...driverForm, pan_number: e.target.value.toUpperCase().slice(0, 10)}); if (driverErrors.pan_number) setDriverErrors(prev => ({ ...prev, pan_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { driverErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.pan_number}</p> }
@@ -2483,7 +2515,7 @@ export default function HotelDetail() {
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account Number</label>
-                    <input type="text" value={driverForm.bank_account_number} inputMode="numeric"
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.bank_account_number = el; }}  type="text" value={driverForm.bank_account_number} inputMode="numeric"
                       onChange={e => { setDriverForm({ ...driverForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18)}); if (driverErrors.bank_account_number) setDriverErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { driverErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_account_number}</p> }
@@ -2491,7 +2523,7 @@ export default function HotelDetail() {
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC Code</label>
-                    <input type="text" placeholder="SBIN0001234" value={driverForm.bank_ifsc}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.bank_ifsc = el; }}  type="text" placeholder="SBIN0001234" value={driverForm.bank_ifsc}
                       onChange={e => { setDriverForm({ ...driverForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11)}); if (driverErrors.bank_ifsc) setDriverErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { driverErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_ifsc}</p> }
@@ -2499,14 +2531,14 @@ export default function HotelDetail() {
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Driving License Number <span className="text-red-500">*</span></label>
-                    <input type="text" value={driverForm.driving_license_number}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.driving_license_number = el; }}  type="text" value={driverForm.driving_license_number}
                       onChange={e => { setDriverForm({ ...driverForm, driving_license_number: e.target.value.toUpperCase().slice(0, 16)}); if (driverErrors.driving_license_number) setDriverErrors(prev => ({ ...prev, driving_license_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.driving_license_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { driverErrors.driving_license_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.driving_license_number}</p> }
                   </div>
                 </div>
 
-                <div className="mb-4">
+                <div ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.licensePhoto = el; }}  className="mb-4">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Driving License Photo <span className="text-red-500"> *</span></label>
                   <div className="relative group">
                     <div
@@ -2550,7 +2582,7 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
-                    <input type="text" value={driverForm.aadhar_number} inputMode="numeric"
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.aadhar_number = el; }}  type="text" value={driverForm.aadhar_number} inputMode="numeric"
                       onChange={e => { setDriverForm({ ...driverForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12)}); if (driverErrors.aadhar_number) setDriverErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { driverErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.aadhar_number}</p> }
@@ -2558,7 +2590,7 @@ export default function HotelDetail() {
                   <div />
                 </div>
 
-                <div className="mb-4">
+                <div ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.drvAadharPhoto = el; }}  className="mb-4">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Aadhar Photo <span className="text-red-500"> *</span></label>
                   <div className="relative group">
                     <div
@@ -2670,21 +2702,21 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Full Name <span className="text-red-500">*</span></label>
-                    <input type="text" value={supervisorForm.name}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.name = el; }}  type="text" value={supervisorForm.name}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, name: e.target.value}); if (supervisorErrors.name) setSupervisorErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
 { supervisorErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.name}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone Number <span className="text-red-500">*</span></label>
-                    <input type="tel" value={supervisorForm.phone} inputMode="numeric"
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.phone = el; }}  type="tel" value={supervisorForm.phone} inputMode="numeric"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10)}); if (supervisorErrors.phone) setSupervisorErrors(prev => ({ ...prev, phone: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { supervisorErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.phone}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email <span className="text-red-500">*</span></label>
-                    <input type="email" value={supervisorForm.email}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.email = el; }}  type="email" value={supervisorForm.email}
                       name="new-supervisor-email" autoComplete="off"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, email: e.target.value}); if (supervisorErrors.email) setSupervisorErrors(prev => ({ ...prev, email: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
@@ -2692,7 +2724,7 @@ export default function HotelDetail() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
-                    <select value={supervisorForm.gender}
+                    <select ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.gender = el; }}  value={supervisorForm.gender}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, gender: e.target.value}); if (supervisorErrors.gender) setSupervisorErrors(prev => ({ ...prev, gender: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`}>
                       <option value="" disabled>Select gender</option>
@@ -2705,7 +2737,7 @@ export default function HotelDetail() {
                 {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Password <span className="text-red-500">*</span></label>
-                    <input type="password" value={supervisorForm.password}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.password = el; }}  type="password" value={supervisorForm.password}
                       name="new-supervisor-password" autoComplete="new-password"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, password: e.target.value}); if (supervisorErrors.password) setSupervisorErrors(prev => ({ ...prev, password: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.password ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
@@ -2713,7 +2745,7 @@ export default function HotelDetail() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Confirm <span className="text-red-500">*</span></label>
-                    <input type="password" value={supervisorForm.confirmPassword}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.confirmPassword = el; }}  type="password" value={supervisorForm.confirmPassword}
                       name="new-supervisor-confirm-password" autoComplete="new-password"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, confirmPassword: e.target.value}); if (supervisorErrors.confirmPassword) setSupervisorErrors(prev => ({ ...prev, confirmPassword: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.confirmPassword ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
@@ -2730,35 +2762,35 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
-                    <input type="text" placeholder="ABCDE1234F" value={supervisorForm.pan_number}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.pan_number = el; }}  type="text" placeholder="ABCDE1234F" value={supervisorForm.pan_number}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, pan_number: e.target.value.toUpperCase().slice(0, 10)}); if (supervisorErrors.pan_number) setSupervisorErrors(prev => ({ ...prev, pan_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { supervisorErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.pan_number}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account Number</label>
-                    <input type="text" value={supervisorForm.bank_account_number} inputMode="numeric"
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_account_number = el; }}  type="text" value={supervisorForm.bank_account_number} inputMode="numeric"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18)}); if (supervisorErrors.bank_account_number) setSupervisorErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
 { supervisorErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_account_number}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC Code</label>
-                    <input type="text" placeholder="SBIN0001234" value={supervisorForm.bank_ifsc}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_ifsc = el; }}  type="text" placeholder="SBIN0001234" value={supervisorForm.bank_ifsc}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11)}); if (supervisorErrors.bank_ifsc) setSupervisorErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { supervisorErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_ifsc}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
-                    <input type="text" value={supervisorForm.aadhar_number} inputMode="numeric"
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.aadhar_number = el; }}  type="text" value={supervisorForm.aadhar_number} inputMode="numeric"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12)}); if (supervisorErrors.aadhar_number) setSupervisorErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
 { supervisorErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.aadhar_number}</p> }
                   </div>
                 </div>
 
-                <div className="mb-4">
+                <div ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.supAadharPhoto = el; }}  className="mb-4">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Aadhar Photo <span className="text-red-500"> *</span></label>
                   <div className="relative group">
                     <div

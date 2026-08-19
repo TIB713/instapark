@@ -6,6 +6,8 @@ import { fmtDate, fmtDateTime, fmtDateTimeFull } from "@/lib/time";
 import { toast } from "sonner";
 import { ArrowLeft, User, Phone, Hash, Calendar, CheckCircle2, RotateCcw, Search, Mail, CreditCard, Landmark, FileText, Download, ChevronDown, AlertTriangle, CheckCircle, ShieldCheck, Edit2, Save, X, Camera, Trash2, Car, Check } from "lucide-react"; 
 
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
+
 const StatusBadge = ({ status }) => {
   const configs = {
     "CHECKED_IN": "bg-blue-100 text-blue-700",
@@ -24,6 +26,9 @@ const StatusBadge = ({ status }) => {
 export default function DriverDetail() {
   const { did } = useParams();
   const nav = useNavigate();
+  const fieldRefs = useRef({});
+
+  const scrollToFirstError = useScrollToFirstError(["name", "email", "gender", "phone", "pin", "pan_number", "bank_account_number", "bank_ifsc", "driving_license_number", "aadhar_number", "driving_license_photo", "aadhar_photo"], fieldRefs);
   const [driver, setDriver] = useState(null);
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -382,7 +387,10 @@ export default function DriverDetail() {
     e.preventDefault();
     const errs = validateEdit();
     setEditErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstError(errs);
+      return;
+    }
     try {
       const payload = { ...editForm };
       if (!payload.pin) delete payload.pin;
@@ -774,22 +782,22 @@ export default function DriverDetail() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Name</label>
-                <input value={editForm.name} onChange={e => { setEditForm({...editForm, name: e.target.value}); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.name = el; }}  value={editForm.name} onChange={e => { setEditForm({...editForm, name: e.target.value}); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { editErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.name}</p> }
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone</label>
-                <input value={editForm.phone} onChange={e => { setEditForm({...editForm, phone: e.target.value}); if (editErrors.phone) setEditErrors(prev => ({ ...prev, phone: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.phone = el; }}  value={editForm.phone} onChange={e => { setEditForm({...editForm, phone: e.target.value}); if (editErrors.phone) setEditErrors(prev => ({ ...prev, phone: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { editErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.phone}</p> }
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email <span className="text-red-500">*</span></label>
-                <input type="email" value={editForm.email} onChange={e => { setEditForm({...editForm, email: e.target.value}); if (editErrors.email) setEditErrors(prev => ({ ...prev, email: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.email = el; }}  type="email" value={editForm.email} onChange={e => { setEditForm({...editForm, email: e.target.value}); if (editErrors.email) setEditErrors(prev => ({ ...prev, email: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { editErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.email}</p> }
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
-                <select value={editForm.gender}
+                <select ref={el => { if (fieldRefs.current) fieldRefs.current.gender = el; }}  value={editForm.gender}
                   onChange={e => { setEditForm({ ...editForm, gender: e.target.value}); if (editErrors.gender) setEditErrors(prev => ({ ...prev, gender: undefined })); }}
                   className={`w-full px-4 py-2 rounded-xl border ${editErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}>
                   <option value="" disabled>Select gender</option>
@@ -800,38 +808,38 @@ export default function DriverDetail() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Number</label>
-                <input value={editForm.pan_number} onChange={e => { setEditForm({...editForm, pan_number: e.target.value.toUpperCase().slice(0, 10)}); if (editErrors.pan_number) setEditErrors(prev => ({ ...prev, pan_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.pan_number = el; }}  value={editForm.pan_number} onChange={e => { setEditForm({...editForm, pan_number: e.target.value.toUpperCase().slice(0, 10)}); if (editErrors.pan_number) setEditErrors(prev => ({ ...prev, pan_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { editErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.pan_number}</p> }
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account</label>
-                <input value={editForm.bank_account_number} inputMode="numeric" onChange={e => { setEditForm({...editForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18)}); if (editErrors.bank_account_number) setEditErrors(prev => ({ ...prev, bank_account_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.bank_account_number = el; }}  value={editForm.bank_account_number} inputMode="numeric" onChange={e => { setEditForm({...editForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18)}); if (editErrors.bank_account_number) setEditErrors(prev => ({ ...prev, bank_account_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { editErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.bank_account_number}</p> }
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC</label>
-                <input value={editForm.bank_ifsc} onChange={e => { setEditForm({...editForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11)}); if (editErrors.bank_ifsc) setEditErrors(prev => ({ ...prev, bank_ifsc: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.bank_ifsc = el; }}  value={editForm.bank_ifsc} onChange={e => { setEditForm({...editForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11)}); if (editErrors.bank_ifsc) setEditErrors(prev => ({ ...prev, bank_ifsc: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { editErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.bank_ifsc}</p> }
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Driving License Number <span className="text-red-500">*</span></label>
-                <input value={editForm.driving_license_number} onChange={e => { setEditForm({...editForm, driving_license_number: e.target.value}); if (editErrors.driving_license_number) setEditErrors(prev => ({ ...prev, driving_license_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.driving_license_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.driving_license_number = el; }}  value={editForm.driving_license_number} onChange={e => { setEditForm({...editForm, driving_license_number: e.target.value}); if (editErrors.driving_license_number) setEditErrors(prev => ({ ...prev, driving_license_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.driving_license_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { editErrors.driving_license_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.driving_license_number}</p> }
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
-                <input value={editForm.aadhar_number || ""} inputMode="numeric" onChange={e => { setEditForm({...editForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12)}); if (editErrors.aadhar_number) setEditErrors(prev => ({ ...prev, aadhar_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.aadhar_number = el; }}  value={editForm.aadhar_number || ""} inputMode="numeric" onChange={e => { setEditForm({...editForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12)}); if (editErrors.aadhar_number) setEditErrors(prev => ({ ...prev, aadhar_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                 {editErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.aadhar_number}</p>}
               </div>
               {isSuperadmin && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">New PIN (leave blank to keep current)</label>
-                  <input value={editForm.pin || ""} onChange={e => setEditForm({...editForm, pin: e.target.value})} maxLength={4} pattern="[0-9]{4}" className="w-full font-mono px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]" />
+                  <input ref={el => { if (fieldRefs.current) fieldRefs.current.pin = el; }}  value={editForm.pin || ""} onChange={e => setEditForm({...editForm, pin: e.target.value})} maxLength={4} pattern="[0-9]{4}" className="w-full font-mono px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]" />
                 </div>
               )}
             </div>
 
-            <div> 
+            <div ref={el => { if (fieldRefs.current) fieldRefs.current.driving_license_photo = el; }} > 
               <div className="text-[10px] uppercase font-bold text-gray-400 mb-2">Driving License Photo</div> 
               <div className="relative group inline-block w-full">
                 {driver.driving_license_photo ? (
@@ -839,7 +847,7 @@ export default function DriverDetail() {
                     <img src={driver.driving_license_photo} alt="Driving License" className={`h-32 w-full object-cover rounded-xl border ${editErrors.driving_license_photo ? "border-red-400" : "border-gray-200"} cursor-pointer hover:opacity-90 transition`} onClick={() => setLightbox(driver.driving_license_photo)} /> 
                     <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
                       <Camera className="w-5 h-5 text-white" />
-                      <input type="file" className="hidden" accept="image/*" onChange={handleLicensePhotoUpload} disabled={uploading} />
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.driving_license_photo = el; }}  type="file" className="hidden" accept="image/*" onChange={handleLicensePhotoUpload} disabled={uploading} />
                     </label>
                     <button type="button" onClick={async (e) => {
                       e.stopPropagation();
@@ -857,14 +865,14 @@ export default function DriverDetail() {
                   <label className={`flex flex-col items-center justify-center h-32 w-full bg-gray-50 border-2 border-dashed ${editErrors.driving_license_photo ? "border-red-400 bg-red-50" : "border-gray-200"} rounded-xl cursor-pointer hover:bg-gray-100 hover:border-gray-300 transition-all`}>
                     <Camera className="w-6 h-6 text-gray-400 mb-2" />
                     <span className="text-xs text-gray-500 font-semibold">Upload License</span>
-                    <input type="file" className="hidden" accept="image/*" onChange={handleLicensePhotoUpload} disabled={uploading} />
+                    <input ref={el => { if (fieldRefs.current) fieldRefs.current.driving_license_photo = el; }}  type="file" className="hidden" accept="image/*" onChange={handleLicensePhotoUpload} disabled={uploading} />
                   </label>
                 )}
               </div>
               {editErrors.driving_license_photo && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.driving_license_photo}</p>}
             </div>
 
-            <div> 
+            <div ref={el => { if (fieldRefs.current) fieldRefs.current.aadhar_photo = el; }} > 
               <div className="text-[10px] uppercase font-bold text-gray-400 mb-2">Aadhar Photo</div> 
               <div className="relative group inline-block w-full">
                 {driver.aadhar_photo ? (
@@ -872,7 +880,7 @@ export default function DriverDetail() {
                     <img src={driver.aadhar_photo} alt="Aadhar" className={`h-32 w-full object-cover rounded-xl border ${editErrors.aadhar_photo ? "border-red-400" : "border-gray-200"} cursor-pointer hover:opacity-90 transition`} onClick={() => setLightbox(driver.aadhar_photo)} /> 
                     <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
                       <Camera className="w-5 h-5 text-white" />
-                      <input type="file" className="hidden" accept="image/*" onChange={handleAadharPhotoUpload} disabled={uploading} />
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.aadhar_photo = el; }}  type="file" className="hidden" accept="image/*" onChange={handleAadharPhotoUpload} disabled={uploading} />
                     </label>
                     <button type="button" onClick={async (e) => {
                       e.stopPropagation();
@@ -890,7 +898,7 @@ export default function DriverDetail() {
                   <label className={`flex flex-col items-center justify-center h-32 w-full bg-gray-50 border-2 border-dashed ${editErrors.aadhar_photo ? "border-red-400 bg-red-50" : "border-gray-200"} rounded-xl cursor-pointer hover:bg-gray-100 hover:border-gray-300 transition-all`}>
                     <Camera className="w-6 h-6 text-gray-400 mb-2" />
                     <span className="text-xs text-gray-500 font-semibold">Upload Aadhar</span>
-                    <input type="file" className="hidden" accept="image/*" onChange={handleAadharPhotoUpload} disabled={uploading} />
+                    <input ref={el => { if (fieldRefs.current) fieldRefs.current.aadhar_photo = el; }}  type="file" className="hidden" accept="image/*" onChange={handleAadharPhotoUpload} disabled={uploading} />
                   </label>
                 )}
               </div>

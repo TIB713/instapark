@@ -290,21 +290,21 @@ export default function OwnerDashboard() {
           <>
             <h2 className="font-heading text-xl font-semibold text-[#0F2044] mb-4">Quick Links</h2>
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-gray-100">
-              <Link to="/owner/events" className="flex-1 p-4 flex items-center justify-between hover:bg-gray-50 transition">
+              <Link to="/provider/events" className="flex-1 p-4 flex items-center justify-between hover:bg-gray-50 transition">
                 <div className="flex items-center gap-3">
                   <CalendarClock className="w-5 h-5 text-emerald-600" />
                   <span className="font-semibold text-gray-800 text-sm">Manage Events</span>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </Link>
-              <Link to="/owner/cars" className="flex-1 p-4 flex items-center justify-between hover:bg-gray-50 transition">
+              <Link to="/provider/cars" className="flex-1 p-4 flex items-center justify-between hover:bg-gray-50 transition">
                 <div className="flex items-center gap-3">
                   <Car className="w-5 h-5 text-blue-600" />
                   <span className="font-semibold text-gray-800 text-sm">View Cars</span>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </Link>
-              <Link to="/owner/incidents" className="flex-1 p-4 flex items-center justify-between hover:bg-gray-50 transition">
+              <Link to="/provider/incidents" className="flex-1 p-4 flex items-center justify-between hover:bg-gray-50 transition">
                 <div className="flex items-center gap-3">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
                   <span className="font-semibold text-gray-800 text-sm">Incidents</span>

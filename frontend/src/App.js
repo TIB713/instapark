@@ -42,7 +42,7 @@ import OwnerTeam from "@/pages/owner/Team";
 import OwnerDriverDetail from "@/pages/owner/DriverDetail";
 import OwnerSupervisorDetail from "@/pages/owner/SupervisorDetail";
 import OwnerAdmins from "@/pages/owner/Admins";
-import OwnerQrCodes from "@/pages/owner/QrCodes";
+
 
 function isTokenValid(token) {
   try {
@@ -91,7 +91,7 @@ function App() {
           <Route path="/provider/events/:eid" element={<RequireOwnerAuth><OwnerEventDetail /></RequireOwnerAuth>} />
           <Route path="/provider/cars" element={<RequireOwnerAuth><OwnerCars /></RequireOwnerAuth>} />
           <Route path="/provider/cars/:plate" element={<RequireOwnerAuth><OwnerCarDetail /></RequireOwnerAuth>} />
-          <Route path="/provider/qr-codes" element={<RequireOwnerAuth><OwnerQrCodes /></RequireOwnerAuth>} />
+
           <Route path="/provider/incidents" element={<RequireOwnerAuth><OwnerIncidents /></RequireOwnerAuth>} />
           <Route path="/provider/team" element={<RequireOwnerAuth><OwnerTeam /></RequireOwnerAuth>} />
           <Route path="/provider/drivers/:did" element={<RequireOwnerAuth><OwnerDriverDetail /></RequireOwnerAuth>} />

@@ -5,14 +5,19 @@ import SuperLayout from "@/components/layout/SuperLayout";
 import { api } from "@/lib/api";
 import { fmtDate } from "@/lib/time";
 import { toast } from "sonner";
-import { Plus, Search, Building2, X } from "lucide-react";
+import { Plus, Search, Building2, X, Check, AlertTriangle, CheckCircle } from "lucide-react";
 import EmptyState from "@/components/ui/EmptyState";
 import { State, City } from "country-state-city";
+
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
 
 const generateTempPassword = () => Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10).toUpperCase() + "1!";
 
 export default function Providers() {
   const nav = useNavigate();
+  const fieldRefs = useRef({});
+
+  const scrollToFirstError = useScrollToFirstError(["name", "email", "phone", "password", "address", "city", "state", "max_events", "max_hotels", "max_cars"], fieldRefs);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -106,7 +111,10 @@ export default function Providers() {
     if (submitting) return; // block if already submitting
     const errs = validate();
     setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstError(errs);
+      return;
+    }
     
     setSubmitting(true);
     try {
@@ -231,9 +239,17 @@ export default function Providers() {
                     <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${(r.is_verified && r.is_active) ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}> 
                       {(r.is_verified && r.is_active) ? "Active" : "Inactive"} 
                     </span> 
-                    <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${r.is_verified ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}> 
-                      {r.is_verified ? "Verified" : "Unverified"} 
-                    </span>
+                    {
+  r.is_verified ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium shrink-0">
+      <CheckCircle className="w-3 h-3" /> Verified
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium shrink-0">
+      <AlertTriangle className="w-3 h-3" /> Unverified
+    </span>
+  )
+}
                   </div> 
                   <span className="text-gray-400 text-xs truncate block">{r.email}</span> 
                 </div> 
@@ -288,7 +304,7 @@ export default function Providers() {
                     ].map(([l, k, t]) => (
                       <div key={k}>
                         <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">{l} <span className="text-red-500">*</span></label>
-                        <input data-testid={`provider-${k}-input`} type={t} value={form[k]}
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current[k] = el; }}  data-testid={`provider-${k}-input`} type={t} value={form[k]}
                                onChange={(e) => {
                                  let val = e.target.value;
                                  if (k === "phone") val = val.replace(/\D/g, "").slice(0, 10);
@@ -303,14 +319,14 @@ export default function Providers() {
                     ))}
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Address <span className="text-red-500">*</span></label>
-                      <input data-testid="provider-address-input" type="text" value={form.address}
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.address = el; }}  data-testid="provider-address-input" type="text" value={form.address}
                              onChange={(e) => { setForm({ ...form, address: e.target.value }); if (errors.address) setErrors(prev => ({ ...prev, address: undefined })); }}
                              className={`mt-1 w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] transition-colors ${errors.address ? "border-red-400" : "border-gray-200"}`} />
                       {errors.address && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.address}</p>}
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">State <span className="text-red-500">*</span></label>
-                      <select
+                      <select ref={el => { if (fieldRefs.current) fieldRefs.current.state = el; }} 
                         value={form.state || ""}
                         onChange={e => { setForm(prev => ({ ...prev, state: e.target.value, city: "" })); if (errors.state) setErrors(prev => ({ ...prev, state: undefined })); }}
                         className={`mt-1 w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] transition-colors bg-white ${errors.state ? "border-red-400" : "border-gray-200"}`}
@@ -324,7 +340,7 @@ export default function Providers() {
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">City <span className="text-red-500">*</span></label>
-                      <select
+                      <select ref={el => { if (fieldRefs.current) fieldRefs.current.city = el; }} 
                         value={form.city || ""}
                         onChange={e => { setForm(prev => ({ ...prev, city: e.target.value })); if (errors.city) setErrors(prev => ({ ...prev, city: undefined })); }}
                         disabled={!form.state}
@@ -342,7 +358,7 @@ export default function Providers() {
                     </div>
                     {/* <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Password (min 8) <span className="text-red-500">*</span></label>
-                      <input data-testid="provider-password-input" type="text" value={form.password}
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.password = el; }}  data-testid="provider-password-input" type="text" value={form.password}
                              onChange={(e) => { setForm({ ...form, password: e.target.value }); if (errors.password) setErrors(prev => ({ ...prev, password: undefined })); }}
                              className={`mt-1 w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] transition-colors ${errors.password ? "border-red-400" : "border-gray-200"}`} />
                       {errors.password && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.password}</p>}
@@ -362,25 +378,26 @@ export default function Providers() {
                   
                   <div className="col-span-1 sm:col-span-2 mt-2 mb-1">
                     <h4 className="text-sm font-bold text-[#1A3C6E] border-b pb-2">Limits</h4>
-                    <p className="text-[11px] text-gray-400 mt-1">Leave as 0 to keep this provider blocked until limits are set.</p>
+                    <p className="text-[11px] text-gray-400 mt-1">Leave Events/Hotels as 0 to keep this provider blocked until limits are set.</p>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Max Events</label>
-                      <input type="number" min="0" value={form.max_events} onChange={(e) => { setForm({ ...form, max_events: e.target.value }); if (errors.max_events) setErrors(prev => ({ ...prev, max_events: undefined })); }}
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.max_events = el; }}  type="number" min="0" value={form.max_events} onChange={(e) => { setForm({ ...form, max_events: e.target.value }); if (errors.max_events) setErrors(prev => ({ ...prev, max_events: undefined })); }}
                              className={`mt-1 w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] transition-colors ${errors.max_events ? "border-red-400" : "border-gray-200"}`} />
                       {errors.max_events && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.max_events}</p>}
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Max Hotels/Stores</label>
-                      <input type="number" min="0" value={form.max_hotels} onChange={(e) => { setForm({ ...form, max_hotels: e.target.value }); if (errors.max_hotels) setErrors(prev => ({ ...prev, max_hotels: undefined })); }}
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.max_hotels = el; }}  type="number" min="0" value={form.max_hotels} onChange={(e) => { setForm({ ...form, max_hotels: e.target.value }); if (errors.max_hotels) setErrors(prev => ({ ...prev, max_hotels: undefined })); }}
                              className={`mt-1 w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] transition-colors ${errors.max_hotels ? "border-red-400" : "border-gray-200"}`} />
                       {errors.max_hotels && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.max_hotels}</p>}
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Max Cars</label>
-                      <input type="number" min="0" value={form.max_cars} onChange={(e) => { setForm({ ...form, max_cars: e.target.value }); if (errors.max_cars) setErrors(prev => ({ ...prev, max_cars: undefined })); }}
+                      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Expected Cars</label>
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.max_cars = el; }}  type="number" min="0" value={form.max_cars} onChange={(e) => { setForm({ ...form, max_cars: e.target.value }); if (errors.max_cars) setErrors(prev => ({ ...prev, max_cars: undefined })); }}
                              className={`mt-1 w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] transition-colors ${errors.max_cars ? "border-red-400" : "border-gray-200"}`} />
+                      <p className="text-[10px] text-gray-400 mt-1 italic">Estimate only — check-in isn't blocked once this is reached.</p>
                       {errors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.max_cars}</p>}
                     </div>
                   </div>

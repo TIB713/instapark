@@ -3,13 +3,20 @@ import OwnerLayout from "@/components/layout/OwnerLayout";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { Search, Users, Shield, User, Plus, X } from "lucide-react";
+import { Search, Users, Shield, User, Plus, X, Check, AlertTriangle, CheckCircle } from "lucide-react";
 import SkeletonTable from "@/components/ui/SkeletonTable";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
 
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
+
 export default function OwnerTeam() {
   const nav = useNavigate();
+  const driverFieldRefs = useRef({});
+  const scrollToFirstDriverError = useScrollToFirstError(["name", "phone", "pin", "email", "gender", "pan_number", "bank_account_number", "bank_ifsc", "driving_license_number", "aadhar_number", "licensePhoto", "drvAadharPhoto"], driverFieldRefs);
+
+  const supervisorFieldRefs = useRef({});
+  const scrollToFirstSupervisorError = useScrollToFirstError(["name", "phone", "email", "gender", "password", "confirmPassword", "pan_number", "bank_account_number", "bank_ifsc", "aadhar_number", "supAadharPhoto"], supervisorFieldRefs);
   const [activeTab, setActiveTab] = useState("drivers");
   const [drivers, setDrivers] = useState([]);
   const [supervisors, setSupervisors] = useState([]);
@@ -135,7 +142,10 @@ export default function OwnerTeam() {
     e.preventDefault();
     const errs = validateSupervisor();
     setSupervisorErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstSupervisorError(errs);
+      return;
+    }
 
     setSavingSupervisor(true);
 
@@ -202,7 +212,10 @@ export default function OwnerTeam() {
     e.preventDefault();
     const errs = validateDriver();
     setDriverErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstDriverError(errs);
+      return;
+    }
 
     setSavingDriver(true);
 
@@ -267,7 +280,7 @@ export default function OwnerTeam() {
         driver_photo: driverPhotoUrl,
       });
       toast.success(`Driver created! Employee ID: ${data.employee_id} | PIN: ${data.pin}`);
-      closeDriverModal();
+      setDriverModal(false);
       load(); // reload provider data to refresh driver list 
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to create driver");
@@ -484,9 +497,17 @@ export default function OwnerTeam() {
                     <td className="px-6 py-4 text-gray-600">{d.hotel_name || "—"}</td>
                     <td className="px-6 py-4 flex items-center gap-2">
                       <StatusBadge status={d.is_active !== false ? "active" : "inactive"} />
-                      <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${d.is_verified ? "text-emerald-600 bg-emerald-50 border-emerald-200" : "text-amber-600 bg-amber-50 border-amber-200"}`}>
-                        {d.is_verified ? "Verified" : "Unverified"}
-                      </span>
+                      {
+  d.is_verified ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+      <CheckCircle className="w-3 h-3" /> Verified
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+      <AlertTriangle className="w-3 h-3" /> Unverified
+    </span>
+  )
+}
                       {!d.is_active && (
                         <button onClick={(e) => { e.stopPropagation(); handleActivate(d.id); }} className="ml-2 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100">
                           Activate
@@ -524,9 +545,17 @@ export default function OwnerTeam() {
                     <td className="px-6 py-4 text-gray-600">{s.hotel_name || "—"}</td>
                     <td className="px-6 py-4 flex items-center gap-2">
                       <StatusBadge status={s.is_active !== false ? "active" : "inactive"} />
-                      <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${s.is_verified ? "text-emerald-600 bg-emerald-50 border-emerald-200" : "text-amber-600 bg-amber-50 border-amber-200"}`}>
-                        {s.is_verified ? "Verified" : "Unverified"}
-                      </span>
+                      {
+  s.is_verified ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+      <CheckCircle className="w-3 h-3" /> Verified
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+      <AlertTriangle className="w-3 h-3" /> Unverified
+    </span>
+  )
+}
                     </td>
                   </tr>
                 ))}
@@ -541,7 +570,7 @@ export default function OwnerTeam() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col mb-8">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
               <h3 className="font-heading text-xl font-bold text-[#0F2044]">Add Driver</h3>
-              <button onClick={closeDriverModal} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setDriverModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -587,21 +616,21 @@ export default function OwnerTeam() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Name <span className="text-red-500">*</span></label>
-                    <input type="text" value={driverForm.name}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.name = el; }}  type="text" value={driverForm.name}
                       onChange={e => { setDriverForm({ ...driverForm, name: e.target.value }); if (driverErrors.name) setDriverErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {driverErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.name}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone <span className="text-red-500">*</span></label>
-                    <input type="tel" inputMode="numeric" value={driverForm.phone}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.phone = el; }}  type="tel" inputMode="numeric" value={driverForm.phone}
                       onChange={e => { setDriverForm({ ...driverForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }); if (driverErrors.phone) setDriverErrors(prev => ({ ...prev, phone: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {driverErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.phone}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">4-Digit PIN <span className="text-red-500">*</span></label>
-                    <input type="text" value={driverForm.pin}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.pin = el; }}  type="text" value={driverForm.pin}
                       onChange={e => { setDriverForm({ ...driverForm, pin: e.target.value.replace(/\D/g, "").slice(0, 4) }); if (driverErrors.pin) setDriverErrors(prev => ({ ...prev, pin: undefined })); }}
                       placeholder="e.g. 1234"
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.pin ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono tracking-widest`} />
@@ -611,14 +640,14 @@ export default function OwnerTeam() {
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                       Email <span className="text-red-500">*</span>
                     </label>
-                    <input type="email" value={driverForm.email}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.email = el; }}  type="email" value={driverForm.email}
                       onChange={e => { setDriverForm({ ...driverForm, email: e.target.value }); if (driverErrors.email) setDriverErrors(prev => ({ ...prev, email: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {driverErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.email}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
-                    <select value={driverForm.gender}
+                    <select ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.gender = el; }}  value={driverForm.gender}
                       onChange={e => { setDriverForm({ ...driverForm, gender: e.target.value }); if (driverErrors.gender) setDriverErrors(prev => ({ ...prev, gender: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`}>
                       <option value="" disabled>Select gender</option>
@@ -637,35 +666,35 @@ export default function OwnerTeam() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
-                    <input type="text" placeholder="ABCDE1234F" value={driverForm.pan_number}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.pan_number = el; }}  type="text" placeholder="ABCDE1234F" value={driverForm.pan_number}
                       onChange={e => { setDriverForm({ ...driverForm, pan_number: e.target.value.toUpperCase().slice(0, 10) }); if (driverErrors.pan_number) setDriverErrors(prev => ({ ...prev, pan_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
                     {driverErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.pan_number}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account Number</label>
-                    <input type="text" inputMode="numeric" value={driverForm.bank_account_number}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.bank_account_number = el; }}  type="text" inputMode="numeric" value={driverForm.bank_account_number}
                       onChange={e => { setDriverForm({ ...driverForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18) }); if (driverErrors.bank_account_number) setDriverErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {driverErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_account_number}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC Code</label>
-                    <input type="text" placeholder="SBIN0001234" value={driverForm.bank_ifsc}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.bank_ifsc = el; }}  type="text" placeholder="SBIN0001234" value={driverForm.bank_ifsc}
                       onChange={e => { setDriverForm({ ...driverForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11) }); if (driverErrors.bank_ifsc) setDriverErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
                     {driverErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_ifsc}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Driving License Number <span className="text-red-500">*</span></label>
-                    <input type="text" inputMode="text" value={driverForm.driving_license_number}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.driving_license_number = el; }}  type="text" inputMode="text" value={driverForm.driving_license_number}
                       onChange={e => { setDriverForm({ ...driverForm, driving_license_number: e.target.value.toUpperCase().slice(0, 16) }); if (driverErrors.driving_license_number) setDriverErrors(prev => ({ ...prev, driving_license_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.driving_license_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
                     {driverErrors.driving_license_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.driving_license_number}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
-                    <input type="text" inputMode="numeric" value={driverForm.aadhar_number}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.aadhar_number = el; }}  type="text" inputMode="numeric" value={driverForm.aadhar_number}
                       onChange={e => { setDriverForm({ ...driverForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12) }); if (driverErrors.aadhar_number) setDriverErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {driverErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.aadhar_number}</p>}
@@ -677,7 +706,7 @@ export default function OwnerTeam() {
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
                     Driving License Photo <span className="text-red-500">*</span>
                   </label>
-                  <div className="relative group">
+                  <div ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.licensePhoto = el; }}  className="relative group">
                     <div
                       onClick={() => document.getElementById("license-photo-input").click()}
                       className={`w-full border-2 border-dashed ${driverErrors.licensePhoto ? "border-red-400" : "border-gray-200"} rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#1A3C6E] transition`}
@@ -720,7 +749,7 @@ export default function OwnerTeam() {
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
                     Aadhar Photo <span className="text-red-500">*</span>
                   </label>
-                  <div className="relative group">
+                  <div ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.drvAadharPhoto = el; }}  className="relative group">
                     <div
                       onClick={() => document.getElementById("drv-aadhar-photo-input").click()}
                       className={`w-full border-2 border-dashed ${driverErrors.drvAadharPhoto ? "border-red-400" : "border-gray-200"} rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#1A3C6E] transition`}
@@ -762,7 +791,7 @@ export default function OwnerTeam() {
 
                 <p className="text-xs text-gray-400 mb-2"><span className="text-red-500">*</span> Required fields</p>
                 <div className="flex gap-3 pt-2">
-                  <button type="button" onClick={closeDriverModal}
+                  <button type="button" onClick={() => setDriverModal(false)}
                     className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
                   <button type="submit" disabled={savingDriver}
                     className="flex-1 px-4 py-2.5 rounded-xl bg-[#1A3C6E] text-white font-semibold hover:bg-[#0F2044] disabled:opacity-60">
@@ -829,21 +858,21 @@ export default function OwnerTeam() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Full Name <span className="text-red-500">*</span></label>
-                    <input type="text" value={supervisorForm.name}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.name = el; }}  type="text" value={supervisorForm.name}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, name: e.target.value }); if (supervisorErrors.name) setSupervisorErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {supervisorErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.name}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone Number <span className="text-red-500">*</span></label>
-                    <input type="tel" inputMode="numeric" value={supervisorForm.phone}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.phone = el; }}  type="tel" inputMode="numeric" value={supervisorForm.phone}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }); if (supervisorErrors.phone) setSupervisorErrors(prev => ({ ...prev, phone: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {supervisorErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.phone}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email <span className="text-red-500">*</span></label>
-                    <input type="email" value={supervisorForm.email}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.email = el; }}  type="email" value={supervisorForm.email}
                       name="new-supervisor-email" autoComplete="off"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, email: e.target.value }); if (supervisorErrors.email) setSupervisorErrors(prev => ({ ...prev, email: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
@@ -851,7 +880,7 @@ export default function OwnerTeam() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
-                    <select value={supervisorForm.gender}
+                    <select ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.gender = el; }}  value={supervisorForm.gender}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, gender: e.target.value }); if (supervisorErrors.gender) setSupervisorErrors(prev => ({ ...prev, gender: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`}>
                       <option value="" disabled>Select gender</option>
@@ -864,7 +893,7 @@ export default function OwnerTeam() {
                 {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Password <span className="text-red-500">*</span></label>
-                    <input type="password" value={supervisorForm.password}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.password = el; }}  type="password" value={supervisorForm.password}
                       name="new-supervisor-password" autoComplete="new-password"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, password: e.target.value}); if (supervisorErrors.password) setSupervisorErrors(prev => ({ ...prev, password: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.password ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
@@ -872,7 +901,7 @@ export default function OwnerTeam() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Confirm <span className="text-red-500">*</span></label>
-                    <input type="password" value={supervisorForm.confirmPassword}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.confirmPassword = el; }}  type="password" value={supervisorForm.confirmPassword}
                       name="new-supervisor-confirm-password" autoComplete="new-password"
                       onChange={e => { setSupervisorForm({ ...supervisorForm, confirmPassword: e.target.value}); if (supervisorErrors.confirmPassword) setSupervisorErrors(prev => ({ ...prev, confirmPassword: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.confirmPassword ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
@@ -889,21 +918,21 @@ export default function OwnerTeam() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
-                    <input type="text" placeholder="ABCDE1234F" value={supervisorForm.pan_number}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.pan_number = el; }}  type="text" placeholder="ABCDE1234F" value={supervisorForm.pan_number}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, pan_number: e.target.value.toUpperCase().slice(0, 10) }); if (supervisorErrors.pan_number) setSupervisorErrors(prev => ({ ...prev, pan_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
                     {supervisorErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.pan_number}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account Number</label>
-                    <input type="text" inputMode="numeric" value={supervisorForm.bank_account_number}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_account_number = el; }}  type="text" inputMode="numeric" value={supervisorForm.bank_account_number}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18) }); if (supervisorErrors.bank_account_number) setSupervisorErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {supervisorErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_account_number}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC Code</label>
-                    <input type="text" placeholder="SBIN0001234" value={supervisorForm.bank_ifsc}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_ifsc = el; }}  type="text" placeholder="SBIN0001234" value={supervisorForm.bank_ifsc}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11) }); if (supervisorErrors.bank_ifsc) setSupervisorErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
                     {supervisorErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_ifsc}</p>}
@@ -911,7 +940,7 @@ export default function OwnerTeam() {
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
-                    <input type="text" inputMode="numeric" value={supervisorForm.aadhar_number}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.aadhar_number = el; }}  type="text" inputMode="numeric" value={supervisorForm.aadhar_number}
                       onChange={e => { setSupervisorForm({ ...supervisorForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12) }); if (supervisorErrors.aadhar_number) setSupervisorErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
                     {supervisorErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.aadhar_number}</p>}
@@ -922,7 +951,7 @@ export default function OwnerTeam() {
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
                     Aadhar Photo <span className="text-red-500">*</span>
                   </label>
-                  <div className="relative group">
+                  <div ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.supAadharPhoto = el; }}  className="relative group">
                     <div
                       onClick={() => document.getElementById("sup-aadhar-photo-input").click()}
                       className={`w-full border-2 border-dashed ${supervisorErrors.supAadharPhoto ? "border-red-400" : "border-gray-200"} rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#1A3C6E] transition`}

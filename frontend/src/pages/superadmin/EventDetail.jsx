@@ -2,11 +2,13 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useParams, useNavigate } from "react-router-dom";
 import SuperLayout from "@/components/layout/SuperLayout";
 import { api, WS_BASE } from "@/lib/api";
-import { fmtTime, fmtDate, fmtDateTime, fmtDateTimeFull } from "@/lib/time";
+import { fmtTime, fmtDate, fmtDateTime, fmtDateTimeFull, fmtDuration } from "@/lib/time";
 import { toast } from "sonner";
 import { ArrowLeft, Calendar, MapPin, Building2, Users, Car, Star, Clock, Info, Search, MessageSquare, FileText, FileSpreadsheet, X, ChevronDown, CheckCircle2, QrCode, Copy, Download, AlertTriangle, CheckCircle, Edit2, ExternalLink, Radio } from "lucide-react";
 import StatusBadge from "@/components/ui/StatusBadge";
 import { QRCodeSVG } from "qrcode.react";
+
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
 
 const INCIDENT_TYPES = [
   { key: "DAMAGE", label: "Damage", icon: "🚗" },
@@ -27,10 +29,20 @@ const STATUS_COLORS = {
   DISMISSED: { bg: "bg-gray-100", text: "text-gray-500" },
 };
 
+const FEEDBACK_QUESTIONS = [
+  { key: 'extra_money_asked', label: 'Did the driver ask for extra money?' },
+  { key: 'misbehaved', label: 'Was the driver rude or misbehaving?' },
+  { key: 'late_arrival', label: 'Did the driver arrive late to retrieve your car?' },
+  { key: 'vehicle_damaged', label: 'Was your vehicle damaged?' },
+  { key: 'unauthorized_personal_use', label: 'Did you notice the driver using your vehicle without permission?' },
+];
 
 export default function EventDetail() {
   const { eid } = useParams();
   const nav = useNavigate();
+  const fieldRefs = useRef({});
+
+  const scrollToFirstError = useScrollToFirstError(["name", "venue", "date", "end_date", "max_cars", "gate_timer_minutes"], fieldRefs);
   const [event, setEvent] = useState(null);
   const [cars, setCars] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +57,6 @@ export default function EventDetail() {
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [driverCars, setDriverCars] = useState([]);
   const [carsLoading, setCarsLoading] = useState(false);
-  const [expandedCarId, setExpandedCarId] = useState(null);
 
   const [driversPage, setDriversPage] = useState(1);
   const [driverCarsPage, setDriverCarsPage] = useState(1);
@@ -68,9 +79,70 @@ export default function EventDetail() {
   const [openDropdown, setOpenDropdown] = useState(null);
 
   const [eventLiveQueue, setEventLiveQueue] = useState([]);
+
+  // --- Live Queue Highlight Logic ---
+  const previousQueueStatuses = useRef(new Map());
+  const [highlightedCars, setHighlightedCars] = useState(new Set());
+
+  useEffect(() => {
+    if (!eventLiveQueue || eventLiveQueue.length === 0) return;
+
+    let changed = [];
+    const currentMap = new Map();
+    eventLiveQueue.forEach(car => {
+      currentMap.set(car.car_id, car.status);
+      const prevStatus = previousQueueStatuses.current.get(car.car_id);
+      if (prevStatus && prevStatus !== car.status) {
+        changed.push(car.car_id);
+      } else if (!prevStatus) {
+        changed.push(car.car_id);
+      }
+    });
+
+    const isInitialLoad = previousQueueStatuses.current.size === 0;
+    previousQueueStatuses.current = currentMap;
+
+    if (!isInitialLoad && changed.length > 0) {
+      setHighlightedCars(prev => {
+        const next = new Set(prev);
+        changed.forEach(id => next.add(id));
+        return next;
+      });
+      setTimeout(() => {
+        setHighlightedCars(prev => {
+          const next = new Set(prev);
+          changed.forEach(id => next.delete(id));
+          return next;
+        });
+      }, 50);
+    }
+  }, [eventLiveQueue]);
   const [loadingLiveQueue, setLoadingLiveQueue] = useState(false);
 
   const [activeTab, setActiveTab] = useState("info");
+  const [qrModalCar, setQrModalCar] = useState(null);
+
+  const downloadQrSvg = () => {
+    const svg = document.getElementById("guest-qr-svg");
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = 300;
+      canvas.height = 300;
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, 300, 300);
+      const a = document.createElement("a");
+      a.download = `QR_${qrModalCar.plate}.png`;
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    };
+    img.src = "data:image/svg+xml;base64," + btoa(svgData);
+  };
+
 
   const [supervisors, setSupervisors] = useState([]);
   const [supervisorSearch, setSupervisorSearch] = useState("");
@@ -86,6 +158,7 @@ export default function EventDetail() {
   const [wsFailed, setWsFailed] = useState(false);
   const [incidents, setIncidents] = useState([]);
   const isClosed = event?.status === "closed";
+  const isHotelDaily = event?.event_type === "hotel_daily";
   const [showQRModal, setShowQRModal] = useState(false);
 
   const [guestCount, setGuestCount] = useState(0);
@@ -132,7 +205,7 @@ export default function EventDetail() {
 
 
 
-    useEffect(() => {
+  useEffect(() => {
     if (activeTab !== "feedback" || !event) return;
     if (feedback.length === 0) setLoadingFeedback(true);
     api.get(`/events/${eid}/feedback`)
@@ -177,22 +250,30 @@ export default function EventDetail() {
     if (!editOpen && !showQRModal) return;
     const handleEsc = (e) => {
       if (e.key === "Escape") {
-        if (showQRModal) setShowQRModal(false);
-        else if (editOpen) setEditOpen(false); setEditErrors({});
+        if (showQRModal) {
+          setShowQRModal(false);
+        } else if (editOpen) {
+          setEditOpen(false);
+          setEditErrors({});
+        }
       }
     };
     document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
   }, [editOpen, showQRModal]);
 
-    const validateEdit = () => {
+  const validateEdit = () => {
     const errs = {};
-    if (!editForm.name?.trim()) errs.name = "Event name cannot be empty";
-    if (!editForm.venue?.trim()) errs.venue = "Venue cannot be empty";
-    if (!editForm.date?.trim()) errs.date = "Date is required";
-    if (!editForm.max_cars || parseInt(editForm.max_cars) < 1) errs.max_cars = "Max cars must be at least 1";
-    if (totalSlots > editForm.max_cars) {
-      errs.max_cars = `Total slots (${totalSlots}) cannot exceed max cars (${editForm.max_cars}). Reduce zone slots.`;
+    if (!isHotelDaily) {
+      if (!editForm.name?.trim()) errs.name = "Event name cannot be empty";
+      if (!editForm.venue?.trim()) errs.venue = "Venue cannot be empty";
+      if (!editForm.date?.trim()) errs.date = "Date is required";
+      if (!editForm.max_cars || parseInt(editForm.max_cars) < 1) errs.max_cars = "Max cars must be at least 1";
+      if (totalSlots > editForm.max_cars) {
+        errs.max_cars = `Total slots (${totalSlots}) cannot exceed max cars (${editForm.max_cars}). Reduce zone slots.`;
+      }
+    } else {
+      if (editForm.gate_timer_minutes && parseInt(editForm.gate_timer_minutes) < 1) errs.gate_timer_minutes = "Gate timer must be at least 1";
     }
     return errs;
   };
@@ -201,17 +282,33 @@ export default function EventDetail() {
     e.preventDefault();
     const errs = validateEdit();
     setEditErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstError(errs);
+      return;
+    }
     try {
-      const body = {
-        ...editForm,
-        gate_timer_minutes: editForm.gate_timer_minutes ? parseInt(editForm.gate_timer_minutes) : null,
-        key_hook_start: parseInt(editForm.key_hook_start),
-        key_hook_end: parseInt(editForm.key_hook_end),
-        key_hooks: parseInt(editForm.key_hook_end) - parseInt(editForm.key_hook_start) + 1,
-        zones: editForm.zones.filter(z => z.name.trim()),
-        gates: editForm.gates.split(",").map(g => g.trim()).filter(g => g)
-      };
+      let body = {};
+      const parsedGates = editForm.gates.split(",").map(g => g.trim()).filter(g => g);
+      if (isHotelDaily) {
+        body = {
+          venue: editForm.venue?.trim(),
+          start_time: editForm.start_time,
+          end_time: editForm.end_time,
+          gates: parsedGates,
+          gate_timer_minutes: parseInt(editForm.gate_timer_minutes) || 5,
+          allow_instant_park: editForm.allow_instant_park
+        };
+      } else {
+        body = {
+          ...editForm,
+          gate_timer_minutes: editForm.gate_timer_minutes ? parseInt(editForm.gate_timer_minutes) : null,
+          key_hook_start: parseInt(editForm.key_hook_start),
+          key_hook_end: parseInt(editForm.key_hook_end),
+          key_hooks: parseInt(editForm.key_hook_end) - parseInt(editForm.key_hook_start) + 1,
+          zones: editForm.zones.filter(z => z.name.trim()),
+          gates: parsedGates
+        };
+      }
       await api.patch(`/events/${eid}`, body);
       toast.success("Event updated successfully");
       setEditOpen(false); setEditErrors({});
@@ -729,12 +826,92 @@ export default function EventDetail() {
         <div className="w-10 h-10 rounded-full border-4 border-[#1A3C6E] border-t-transparent animate-spin" />
         <p className="text-gray-400 text-sm font-medium">Loading...</p>
       </div>
+
+      {qrModalCar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setQrModalCar(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6 text-center border-b border-gray-100">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044] uppercase">{qrModalCar.plate}</h3>
+              <p className="text-gray-500 text-sm">{qrModalCar.guest_name || "Guest"}</p>
+            </div>
+            <div className="p-8 flex flex-col items-center">
+              {qrModalCar.retrieval_token ? (
+                <>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                    <QRCodeSVG id="guest-qr-svg" value={`${window.location.origin}/r/${qrModalCar.retrieval_token}`} size={200} />
+                  </div>
+                  {qrModalCar.checkin_code && (
+                    <div className="mt-6 font-mono text-3xl font-bold text-gray-700 tracking-[0.2em]">
+                      {qrModalCar.checkin_code}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 mt-2">Scan to retrieve or present code</p>
+                </>
+              ) : (
+                <p className="text-gray-500 text-center py-8">QR not available for this check-in</p>
+              )}
+            </div>
+            <div className="p-4 bg-gray-50 flex gap-3">
+              <button onClick={() => setQrModalCar(null)} className="flex-1 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
+                Close
+              </button>
+              {qrModalCar.retrieval_token && (
+                <button onClick={downloadQrSvg} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-[#1A3C6E] hover:bg-[#0F2044] transition-colors flex items-center justify-center gap-2">
+                  <Download className="w-4 h-4" /> Download
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </SuperLayout>
+
   );
   if (!event) return (
     <SuperLayout title="Event Detail">
       <div className="p-8 text-center text-gray-400">Event not found or failed to load.</div>
+
+      {qrModalCar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setQrModalCar(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6 text-center border-b border-gray-100">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044] uppercase">{qrModalCar.plate}</h3>
+              <p className="text-gray-500 text-sm">{qrModalCar.guest_name || "Guest"}</p>
+            </div>
+            <div className="p-8 flex flex-col items-center">
+              {qrModalCar.retrieval_token ? (
+                <>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                    <QRCodeSVG id="guest-qr-svg" value={`${window.location.origin}/r/${qrModalCar.retrieval_token}`} size={200} />
+                  </div>
+                  {qrModalCar.checkin_code && (
+                    <div className="mt-6 font-mono text-3xl font-bold text-gray-700 tracking-[0.2em]">
+                      {qrModalCar.checkin_code}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 mt-2">Scan to retrieve or present code</p>
+                </>
+              ) : (
+                <p className="text-gray-500 text-center py-8">QR not available for this check-in</p>
+              )}
+            </div>
+            <div className="p-4 bg-gray-50 flex gap-3">
+              <button onClick={() => setQrModalCar(null)} className="flex-1 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
+                Close
+              </button>
+              {qrModalCar.retrieval_token && (
+                <button onClick={downloadQrSvg} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-[#1A3C6E] hover:bg-[#0F2044] transition-colors flex items-center justify-center gap-2">
+                  <Download className="w-4 h-4" /> Download
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </SuperLayout>
+
   );
 
   return (
@@ -1058,45 +1235,57 @@ export default function EventDetail() {
                   <form onSubmit={handleEditEvent} className="space-y-4">
                     <div className="grid grid-cols-1 gap-4">
                       <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Event Name <span className="text-red-500">*</span></label>
-                        <input
-                          type="text"
-                          value={editForm.name}
-                          onChange={(e) => { setEditForm({ ...editForm, name: e.target.value}); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }}
-                          className={`w-full px-4 py-2 rounded-xl border ${editErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
-                        />
-{ editErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.name}</p> }
+                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Event Name {isHotelDaily ? "" : <span className="text-red-500">*</span>}</label>
+                        {isHotelDaily ? (
+                          <div className="px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm font-semibold text-gray-700">{editForm.name}</div>
+                        ) : (
+                          <input ref={el => { if (fieldRefs.current) fieldRefs.current.name = el; }}
+                            type="text"
+                            value={editForm.name}
+                            onChange={(e) => { setEditForm({ ...editForm, name: e.target.value }); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }}
+                            className={`w-full px-4 py-2 rounded-xl border ${editErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
+                          />
+                        )}
+                        {editErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.name}</p>}
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Venue <span className="text-red-500">*</span></label>
-                        <input
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current.venue = el; }}
                           type="text"
                           value={editForm.venue}
-                          onChange={(e) => { setEditForm({ ...editForm, venue: e.target.value}); if (editErrors.venue) setEditErrors(prev => ({ ...prev, venue: undefined })); }}
+                          onChange={(e) => { setEditForm({ ...editForm, venue: e.target.value }); if (editErrors.venue) setEditErrors(prev => ({ ...prev, venue: undefined })); }}
                           className={`w-full px-4 py-2 rounded-xl border ${editErrors.venue ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
                         />
-{ editErrors.venue && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.venue}</p> }
+                        {editErrors.venue && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.venue}</p>}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Date <span className="text-red-500">*</span></label>
-                          <input
-                            type="date"
-                            value={editForm.date}
-                            onChange={(e) => { setEditForm({ ...editForm, date: e.target.value}); if (editErrors.date) setEditErrors(prev => ({ ...prev, date: undefined })); }}
-                            className={`w-full px-4 py-2 rounded-xl border ${editErrors.date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
-                          />
-{ editErrors.date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.date}</p> }
+                          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Date {isHotelDaily ? "" : <span className="text-red-500">*</span>}</label>
+                          {isHotelDaily ? (
+                            <div className="px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm font-semibold text-gray-700">{editForm.date}</div>
+                          ) : (
+                            <input ref={el => { if (fieldRefs.current) fieldRefs.current.date = el; }}
+                              type="date"
+                              value={editForm.date}
+                              onChange={(e) => { setEditForm({ ...editForm, date: e.target.value }); if (editErrors.date) setEditErrors(prev => ({ ...prev, date: undefined })); }}
+                              className={`w-full px-4 py-2 rounded-xl border ${editErrors.date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
+                            />
+                          )}
+                          {editErrors.date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.date}</p>}
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Date</label>
-                          <input
-                            type="date"
-                            value={editForm.end_date}
-                            onChange={(e) => { setEditForm({ ...editForm, end_date: e.target.value}); if (editErrors.end_date) setEditErrors(prev => ({ ...prev, end_date: undefined })); }}
-                            className={`w-full px-4 py-2 rounded-xl border ${editErrors.end_date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
-                          />
-{ editErrors.end_date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.end_date}</p> }
+                          {isHotelDaily ? (
+                            <div className="px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm font-semibold text-gray-700">{editForm.end_date || "—"}</div>
+                          ) : (
+                            <input ref={el => { if (fieldRefs.current) fieldRefs.current.end_date = el; }}
+                              type="date"
+                              value={editForm.end_date}
+                              onChange={(e) => { setEditForm({ ...editForm, end_date: e.target.value }); if (editErrors.end_date) setEditErrors(prev => ({ ...prev, end_date: undefined })); }}
+                              className={`w-full px-4 py-2 rounded-xl border ${editErrors.end_date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
+                            />
+                          )}
+                          {editErrors.end_date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.end_date}</p>}
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1105,51 +1294,55 @@ export default function EventDetail() {
                           <input
                             type="time"
                             value={editForm.start_time}
-                            onChange={(e) => { setEditForm({ ...editForm, start_time: e.target.value}); if (editErrors.start_time) setEditErrors(prev => ({ ...prev, start_time: undefined })); }}
+                            onChange={(e) => { setEditForm({ ...editForm, start_time: e.target.value }); if (editErrors.start_time) setEditErrors(prev => ({ ...prev, start_time: undefined })); }}
                             className={`w-full px-4 py-2 rounded-xl border ${editErrors.start_time ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
                           />
-{ editErrors.start_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.start_time}</p> }
+                          {editErrors.start_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.start_time}</p>}
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Time</label>
                           <input
                             type="time"
                             value={editForm.end_time}
-                            onChange={(e) => { setEditForm({ ...editForm, end_time: e.target.value}); if (editErrors.end_time) setEditErrors(prev => ({ ...prev, end_time: undefined })); }}
+                            onChange={(e) => { setEditForm({ ...editForm, end_time: e.target.value }); if (editErrors.end_time) setEditErrors(prev => ({ ...prev, end_time: undefined })); }}
                             className={`w-full px-4 py-2 rounded-xl border ${editErrors.end_time ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
                           />
-{ editErrors.end_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.end_time}</p> }
+                          {editErrors.end_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.end_time}</p>}
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Cars</label>
-                          <input
-                            type="number"
-                            min={1}
-                            value={editForm.max_cars}
-                            onChange={(e) => { setEditForm({ ...editForm, max_cars: e.target.value}); if (editErrors.max_cars) setEditErrors(prev => ({ ...prev, max_cars: undefined })); }}
-                            className={`w-full px-4 py-2 rounded-xl border ${editErrors.max_cars ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
-                          />
-{ editErrors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.max_cars}</p> }
+                          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Cars {isHotelDaily ? "" : <span className="text-red-500">*</span>}</label>
+                          {isHotelDaily ? (
+                            <div className="px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm font-semibold text-gray-700">{editForm.max_cars || "—"}</div>
+                          ) : (
+                            <input ref={el => { if (fieldRefs.current) fieldRefs.current.max_cars = el; }}
+                              type="number"
+                              min={1}
+                              value={editForm.max_cars}
+                              onChange={(e) => { setEditForm({ ...editForm, max_cars: e.target.value }); if (editErrors.max_cars) setEditErrors(prev => ({ ...prev, max_cars: undefined })); }}
+                              className={`w-full px-4 py-2 rounded-xl border ${editErrors.max_cars ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
+                            />
+                          )}
+                          {editErrors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.max_cars}</p>}
                         </div>
                         <div>
                           <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Gate Wait Timer (minutes)</label>
-                          <input
+                          <input ref={el => { if (fieldRefs.current) fieldRefs.current.gate_timer_minutes = el; }}
                             type="number"
                             min="1"
                             max="30"
                             value={editForm.gate_timer_minutes}
-                            onChange={(e) => { setEditForm({ ...editForm, gate_timer_minutes: e.target.value}); if (editErrors.gate_timer_minutes) setEditErrors(prev => ({ ...prev, gate_timer_minutes: undefined })); }}
+                            onChange={(e) => { setEditForm({ ...editForm, gate_timer_minutes: e.target.value }); if (editErrors.gate_timer_minutes) setEditErrors(prev => ({ ...prev, gate_timer_minutes: undefined })); }}
                             className={`w-full border ${editErrors.gate_timer_minutes ? "border-red-400" : "border-gray-200"} rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-white mt-1`}
                           />
-{ editErrors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.gate_timer_minutes}</p> }
+                          {editErrors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.gate_timer_minutes}</p>}
                           <p className="text-xs text-gray-400 mt-1">How long the guest has to reach the gate before the car is sent back to parking.</p>
                         </div>
                         <div className="flex items-center gap-2 mt-4">
                           <input type="checkbox" id="edit_allow_instant_park" checked={editForm.allow_instant_park}
-                                 onChange={(e) => setEditForm({ ...editForm, allow_instant_park: e.target.checked })}
-                                 className="w-4 h-4 text-[#1D4ED8] bg-gray-100 border-gray-300 rounded focus:ring-[#1D4ED8]" />
+                            onChange={(e) => setEditForm({ ...editForm, allow_instant_park: e.target.checked })}
+                            className="w-4 h-4 text-[#1D4ED8] bg-gray-100 border-gray-300 rounded focus:ring-[#1D4ED8]" />
                           <label htmlFor="edit_allow_instant_park" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
                             Allow Instant Park for this event
                           </label>
@@ -1157,25 +1350,33 @@ export default function EventDetail() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Key Hooks From</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={editForm.key_hook_start}
-                              onChange={(e) => { setEditForm({ ...editForm, key_hook_start: e.target.value}); if (editErrors.key_hook_start) setEditErrors(prev => ({ ...prev, key_hook_start: undefined })); }}
-                              className={`w-full px-4 py-2 rounded-xl border ${editErrors.key_hook_start ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
-                            />
-{ editErrors.key_hook_start && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.key_hook_start}</p> }
+                            {isHotelDaily ? (
+                              <div className="px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm font-semibold text-gray-700">{editForm.key_hook_start || "—"}</div>
+                            ) : (
+                              <input
+                                type="number"
+                                min={1}
+                                value={editForm.key_hook_start}
+                                onChange={(e) => { setEditForm({ ...editForm, key_hook_start: e.target.value }); if (editErrors.key_hook_start) setEditErrors(prev => ({ ...prev, key_hook_start: undefined })); }}
+                                className={`w-full px-4 py-2 rounded-xl border ${editErrors.key_hook_start ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
+                              />
+                            )}
+                            {editErrors.key_hook_start && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.key_hook_start}</p>}
                           </div>
                           <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Key Hooks To</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={editForm.key_hook_end}
-                              onChange={(e) => { setEditForm({ ...editForm, key_hook_end: e.target.value}); if (editErrors.key_hook_end) setEditErrors(prev => ({ ...prev, key_hook_end: undefined })); }}
-                              className={`w-full px-4 py-2 rounded-xl border ${editErrors.key_hook_end ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
-                            />
-{ editErrors.key_hook_end && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.key_hook_end}</p> }
+                            {isHotelDaily ? (
+                              <div className="px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm font-semibold text-gray-700">{editForm.key_hook_end || "—"}</div>
+                            ) : (
+                              <input
+                                type="number"
+                                min={1}
+                                value={editForm.key_hook_end}
+                                onChange={(e) => { setEditForm({ ...editForm, key_hook_end: e.target.value }); if (editErrors.key_hook_end) setEditErrors(prev => ({ ...prev, key_hook_end: undefined })); }}
+                                className={`w-full px-4 py-2 rounded-xl border ${editErrors.key_hook_end ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
+                              />
+                            )}
+                            {editErrors.key_hook_end && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.key_hook_end}</p>}
                           </div>
                         </div>
                       </div>
@@ -1185,59 +1386,70 @@ export default function EventDetail() {
                           type="text"
                           placeholder="e.g., Main Gate, Side Gate"
                           value={editForm.gates}
-                          onChange={(e) => { setEditForm({ ...editForm, gates: e.target.value}); if (editErrors.gates) setEditErrors(prev => ({ ...prev, gates: undefined })); }}
+                          onChange={(e) => { setEditForm({ ...editForm, gates: e.target.value }); if (editErrors.gates) setEditErrors(prev => ({ ...prev, gates: undefined })); }}
                           className={`w-full px-4 py-2 rounded-xl border ${editErrors.gates ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`}
                         />
-{ editErrors.gates && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.gates}</p> }
+                        {editErrors.gates && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.gates}</p>}
                       </div>
                       <div>
-                        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-                          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
-                            Parking Zones
-                          </label>
-                          <span className={`text-xs font-bold ${totalSlots > editForm.max_cars ? "text-red-500" : "text-emerald-600"}`}>
-                            {totalSlots} / {editForm.max_cars || "—"} slots
-                          </span>
-                        </div>
-                        <div className="space-y-2 mb-2">
-                          {editForm.zones.map((z, i) => (
-                            <div key={i} className="flex gap-2 items-center">
-                              <input
-                                type="text"
-                                placeholder="Zone name (e.g. A)"
-                                value={z.name}
-                                onChange={(e) => {
-                                  const zones = [...editForm.zones];
-                                  zones[i] = { ...zones[i], name: e.target.value };
-                                  setEditForm({ ...editForm, zones });
-                                }}
-                                className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-[#1A3C6E] text-sm"
-                              />
-                              <input
-                                type="number"
-                                placeholder="Slots"
-                                value={z.slots}
-                                min={1}
-                                onChange={(e) => {
-                                  const zones = [...editForm.zones];
-                                  zones[i] = { ...zones[i], slots: parseInt(e.target.value) || 0 };
-                                  setEditForm({ ...editForm, zones });
-                                }}
-                                className="w-20 px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-[#1A3C6E] text-sm text-center"
-                              />
-                              <button type="button"
-                                onClick={() => setEditForm({ ...editForm, zones: editForm.zones.filter((_, k) => k !== i) })}
-                                className="text-red-400 hover:text-red-600 font-bold text-lg leading-none px-1">
-                                ×
-                              </button>
+                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Parking Zones</label>
+                        {isHotelDaily ? (
+                          <div className="space-y-2">
+                            {editForm.zones.map((z, i) => (
+                              <div key={i} className="flex gap-2 items-center">
+                                <div className="flex-1 px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm font-semibold text-gray-700">{z.name}</div>
+                                <div className="w-20 px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 text-sm font-semibold text-gray-700 text-center">{z.slots}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                              <span className={`text-xs font-bold ${totalSlots > editForm.max_cars ? "text-red-500" : "text-emerald-600"}`}>
+                                {totalSlots} / {editForm.max_cars || "—"} slots
+                              </span>
                             </div>
-                          ))}
-                        </div>
-                        <button type="button"
-                          onClick={() => setEditForm({ ...editForm, zones: [...editForm.zones, { name: "", slots: 10 }] })}
-                          className="w-full py-2 rounded-xl border border-dashed border-[#1A3C6E] text-[#1A3C6E] text-sm font-semibold hover:bg-blue-50 transition">
-                          + Add Zone
-                        </button>
+                            <div className="space-y-2 mb-2">
+                              {editForm.zones.map((z, i) => (
+                                <div key={i} className="flex gap-2 items-center">
+                                  <input ref={el => { if (fieldRefs.current) fieldRefs.current.name = el; }}
+                                    type="text"
+                                    placeholder="Zone name (e.g. A)"
+                                    value={z.name}
+                                    onChange={(e) => {
+                                      const zones = [...editForm.zones];
+                                      zones[i] = { ...zones[i], name: e.target.value };
+                                      setEditForm({ ...editForm, zones });
+                                    }}
+                                    className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-[#1A3C6E] text-sm"
+                                  />
+                                  <input
+                                    type="number"
+                                    placeholder="Slots"
+                                    value={z.slots}
+                                    min={1}
+                                    onChange={(e) => {
+                                      const zones = [...editForm.zones];
+                                      zones[i] = { ...zones[i], slots: parseInt(e.target.value) || 0 };
+                                      setEditForm({ ...editForm, zones });
+                                    }}
+                                    className="w-20 px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-[#1A3C6E] text-sm text-center"
+                                  />
+                                  <button type="button"
+                                    onClick={() => setEditForm({ ...editForm, zones: editForm.zones.filter((_, k) => k !== i) })}
+                                    className="text-red-400 hover:text-red-600 font-bold text-lg leading-none px-1">
+                                    ×
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            <button type="button"
+                              onClick={() => setEditForm({ ...editForm, zones: [...editForm.zones, { name: "", slots: 10 }] })}
+                              className="w-full py-2 rounded-xl border border-dashed border-[#1A3C6E] text-[#1A3C6E] text-sm font-semibold hover:bg-blue-50 transition">
+                              + Add Zone
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -1276,7 +1488,7 @@ export default function EventDetail() {
                 <h2 className="font-heading text-lg font-bold text-[#0F2044]">Drivers</h2>
                 <div className="relative w-full sm:w-64">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
+                  <input ref={el => { if (fieldRefs.current) fieldRefs.current.name = el; }}
                     value={driverSearch}
                     onChange={(e) => setDriverSearch(e.target.value)}
                     placeholder="Search by name or employee ID"
@@ -1529,12 +1741,11 @@ export default function EventDetail() {
                       <td className="px-6 py-4 text-gray-500 text-xs">{fmtDate(inc.created_at)}</td>
                       <td className="px-6 py-4">
                         {inc.status ? (
-                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                            inc.status === "OPEN" ? "bg-red-100 text-red-700" :
-                            inc.status === "IN_REVIEW" ? "bg-amber-100 text-amber-700" :
-                            inc.status === "RESOLVED" ? "bg-emerald-100 text-emerald-700" :
-                            "bg-gray-100 text-gray-600"
-                          }`}>
+                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${inc.status === "OPEN" ? "bg-red-100 text-red-700" :
+                              inc.status === "IN_REVIEW" ? "bg-amber-100 text-amber-700" :
+                                inc.status === "RESOLVED" ? "bg-emerald-100 text-emerald-700" :
+                                  "bg-gray-100 text-gray-600"
+                            }`}>
                             {inc.status}
                           </span>
                         ) : "—"}
@@ -1549,11 +1760,11 @@ export default function EventDetail() {
             </div>
             {filteredIncidents.length > 10 && (
               <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-                <span className="text-sm text-gray-400">Showing {Math.min((incidentsPage-1)*10+1, filteredIncidents.length)}–{Math.min(incidentsPage*10, filteredIncidents.length)} of {filteredIncidents.length}</span>
+                <span className="text-sm text-gray-400">Showing {Math.min((incidentsPage - 1) * 10 + 1, filteredIncidents.length)}–{Math.min(incidentsPage * 10, filteredIncidents.length)} of {filteredIncidents.length}</span>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button disabled={incidentsPage === 1} onClick={() => setIncidentsPage(p => p-1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
+                  <button disabled={incidentsPage === 1} onClick={() => setIncidentsPage(p => p - 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
                   <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{incidentsPage}</span>
-                  <button disabled={incidentsPage * 10 >= filteredIncidents.length} onClick={() => setIncidentsPage(p => p+1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+                  <button disabled={incidentsPage * 10 >= filteredIncidents.length} onClick={() => setIncidentsPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
                 </div>
               </div>
             )}
@@ -1610,13 +1821,20 @@ export default function EventDetail() {
                       )}
                     </div>
 
-                    {item.issues && Object.values(item.issues).some(Boolean) && (
-                      <div className="flex flex-wrap gap-1.5 mb-3">
-                        {item.issues.extra_money_asked && <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">Extra money asked</span>}
-                        {item.issues.misbehaved && <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">Misbehaved</span>}
-                        {item.issues.late_arrival && <span className="px-2 py-1 bg-amber-50 text-amber-600 border border-amber-100 rounded-full text-xs font-semibold">Late arrival</span>}
-                        {item.issues.vehicle_damaged && <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">Vehicle damaged</span>}
-                        {item.issues.unauthorized_personal_use && <span className="px-2 py-1 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">Unauthorized use</span>}
+                    {item.issues && (
+                      <div className="flex flex-col gap-1.5 mb-3">
+                        {FEEDBACK_QUESTIONS.map(q => {
+                          const answer = item.issues[q.key];
+                          if (answer === undefined) return null;
+                          return (
+                            <div key={q.key} className="flex items-center justify-between gap-2 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
+                              <span className="text-xs text-gray-600">{q.label}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${answer ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+                                {answer ? 'Yes' : 'No'}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -1639,7 +1857,7 @@ export default function EventDetail() {
               <h2 className="font-heading text-lg font-bold text-[#0F2044]">Supervisors</h2>
               <div className="relative w-full sm:w-64">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
+                <input ref={el => { if (fieldRefs.current) fieldRefs.current.name = el; }}
                   value={supervisorSearch}
                   onChange={(e) => setSupervisorSearch(e.target.value)}
                   placeholder="Search by name or email"
@@ -1795,8 +2013,7 @@ export default function EventDetail() {
                         <th className="text-left px-5 py-3">Retrieved By</th>
                         <th className="text-left px-5 py-3">Entry Time</th>
                         <th className="text-left px-5 py-3">Exit Time</th>
-                        <th className="text-left px-5 py-3">SMS</th>
-                        <th className="text-right px-5 py-3"></th>
+                        <th className="text-left px-5 py-3">SMS / QR</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1804,7 +2021,7 @@ export default function EventDetail() {
                         <>
                           <tr
                             key={c.id}
-                            onClick={() => setExpandedCarId(expandedCarId === c.id ? null : c.id)}
+                            onClick={() => nav(`/superadmin/cars/${encodeURIComponent(c.plate)}`)}
                             className="border-t border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
                           >
                             <td className="px-5 py-3 font-bold uppercase">
@@ -1832,51 +2049,33 @@ export default function EventDetail() {
                               {c.delivered_at ? fmtTime(c.delivered_at) : "—"}
                             </td>
                             <td className="px-5 py-3">
-                              {c.guest_phone ? (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleResendSms(c); }}
-                                  title={`Resend SMS to ${c.guest_phone}`}
-                                  className="p-1.5 rounded-lg text-violet-600 hover:bg-violet-50 transition"
-                                >
-                                  <MessageSquare className="w-4 h-4" />
-                                </button>
-                              ) : (
-                                <span title="No phone number on file" className="inline-flex p-1.5 rounded-lg text-gray-300 cursor-not-allowed">
-                                  <MessageSquare className="w-4 h-4" />
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-5 py-3 text-right">
-                              <ChevronDown className={`w-4 h-4 text-gray-300 transition-transform ${expandedCarId === c.id ? "rotate-180" : ""}`} />
-                            </td>
-                          </tr>
-                          {expandedCarId === c.id && (
-                            <tr key={`${c.id}-expanded`} className="border-t border-gray-100">
-                              <td colSpan={11} className="px-5 py-4 bg-blue-50/40">
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                  {[
-                                    ["Guest Name", c.guest_name || "—"],
-                                    ["Guest Phone", c.guest_phone || "—"],
-                                    ["Key Tag", c.key_tag || "—"],
-                                    ["Notes", c.notes || "—"],
-                                    ["Parked At", c.parked_at ? fmtDateTime(c.parked_at) : "—"],
-                                    ["Retrieval Requested", c.retrieval_requested_at ? fmtDateTime(c.retrieval_requested_at) : "—"],
-                                    ["Duration", c.duration_minutes ? c.duration_minutes + " min" : "—"],
-                                    ["Rating", c.rating ? "★ " + c.rating : "—"],
-                                    ...(c.carried_forward ? [["Overnight Stay", "Yes — carried forward from previous day"]] : []),
-                                  ].map(([label, value]) => (
-                                    <div key={label}>
-                                      <div className="text-[10px] uppercase text-gray-400 font-bold">{label}</div>
-                                      <div className="text-sm font-semibold text-[#0F2044] mt-1">{value}</div>
-                                    </div>
-                                  ))}
+                                <div className="flex gap-2">
+                                  {c.guest_phone ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleResendSms(c); }}
+                                      title={`Resend SMS to ${c.guest_phone}`}
+                                      className="p-1.5 rounded-lg text-violet-600 hover:bg-violet-50 transition"
+                                    >
+                                      <MessageSquare className="w-4 h-4" />
+                                    </button>
+                                  ) : (
+                                    <span title="No phone number on file" className="inline-flex p-1.5 rounded-lg text-gray-300 cursor-not-allowed">
+                                      <MessageSquare className="w-4 h-4" />
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setQrModalCar(c); }}
+                                    className="p-1.5 text-gray-400 hover:text-[#1A3C6E] hover:bg-gray-100 rounded-lg transition-colors"
+                                    title="View QR"
+                                  >
+                                    <QrCode className="w-4 h-4" />
+                                  </button>
                                 </div>
                               </td>
-                            </tr>
-                          )}
+                          </tr>
                         </>
                       ))}
-                      {filteredCars.length === 0 && <tr><td colSpan="11" className="p-8 text-center text-gray-400">{carSearch ? "No cars match your search" : "No car activity recorded"}</td></tr>}
+                      {filteredCars.length === 0 && <tr><td colSpan="10" className="p-8 text-center text-gray-400">{carSearch ? "No cars match your search" : "No car activity recorded"}</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -1912,29 +2111,38 @@ export default function EventDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {eventLiveQueue.map(c => (
-                      <tr key={c.car_id} onClick={() => nav(`/superadmin/cars/${c.car_number}`)}
-                        className="border-t border-gray-100 hover:bg-[#F4F6FA] cursor-pointer transition-colors">
-                        <td className="px-6 py-4 font-mono font-black text-[#0F2044]">{c.car_number || "—"}</td>
-                        <td className="px-6 py-4 text-[#0F2044] font-medium">{c.guest_name || "—"}</td>
-                        <td className="px-6 py-4">
-                          <StatusBadge status={c.status} />
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">
-                          {(() => {
-                            if (c.status === "RETRIEVAL_REQUESTED" || c.status === "BEING_FETCHED") {
-                              return c.retrieval_driver_name || c.parked_driver_name || "—";
-                            } else if (c.status === "PARKED") {
-                              return c.parked_driver_name || "—";
-                            } else {
-                              return c.check_in_driver_name || "—";
-                            }
-                          })()}
-                        </td>
-                        <td className="px-6 py-4 font-mono text-gray-500">{c.zone && c.slot ? `${c.zone} / ${c.slot}` : "—"}</td>
-                        <td className="px-6 py-4 text-gray-500">{c.minutes_in_current_status != null ? `${c.minutes_in_current_status} min` : "—"}</td>
-                      </tr>
-                    ))}
+                    {eventLiveQueue.map(c => {
+                      const isHighlighted = highlightedCars.has(c.car_id);
+                      let rowClasses = "border-t border-gray-100 cursor-pointer ";
+                      if (isHighlighted) {
+                        rowClasses += "bg-blue-100 transition-none animate-in fade-in slide-in-from-top-2 duration-300";
+                      } else {
+                        rowClasses += "bg-white hover:bg-[#F4F6FA] transition-colors duration-[2500ms]";
+                      }
+                      return (
+                        <tr key={c.car_id} onClick={() => nav(`/superadmin/cars/${c.car_number}`)}
+                          className={rowClasses}>
+                          <td className="px-6 py-4 font-mono font-black text-[#0F2044]">{c.car_number || "—"}</td>
+                          <td className="px-6 py-4 text-[#0F2044] font-medium">{c.guest_name || "—"}</td>
+                          <td className="px-6 py-4">
+                            <StatusBadge status={c.status} />
+                          </td>
+                          <td className="px-6 py-4 text-gray-600">
+                            {(() => {
+                              if (c.status === "RETRIEVAL_REQUESTED" || c.status === "BEING_FETCHED") {
+                                return c.retrieval_driver_name || c.parked_driver_name || "—";
+                              } else if (c.status === "PARKED") {
+                                return c.parked_driver_name || "—";
+                              } else {
+                                return c.check_in_driver_name || "—";
+                              }
+                            })()}
+                          </td>
+                          <td className="px-6 py-4 font-mono text-gray-500">{c.zone && c.slot ? `${c.zone} / ${c.slot}` : "—"}</td>
+                          <td className="px-6 py-4 text-gray-500">{fmtDuration(c.minutes_in_current_status)}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1947,6 +2155,47 @@ export default function EventDetail() {
       </div>
 
 
+
+      {qrModalCar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setQrModalCar(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6 text-center border-b border-gray-100">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044] uppercase">{qrModalCar.plate}</h3>
+              <p className="text-gray-500 text-sm">{qrModalCar.guest_name || "Guest"}</p>
+            </div>
+            <div className="p-8 flex flex-col items-center">
+              {qrModalCar.retrieval_token ? (
+                <>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                    <QRCodeSVG id="guest-qr-svg" value={`${window.location.origin}/r/${qrModalCar.retrieval_token}`} size={200} />
+                  </div>
+                  {qrModalCar.checkin_code && (
+                    <div className="mt-6 font-mono text-3xl font-bold text-gray-700 tracking-[0.2em]">
+                      {qrModalCar.checkin_code}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 mt-2">Scan to retrieve or present code</p>
+                </>
+              ) : (
+                <p className="text-gray-500 text-center py-8">QR not available for this check-in</p>
+              )}
+            </div>
+            <div className="p-4 bg-gray-50 flex gap-3">
+              <button onClick={() => setQrModalCar(null)} className="flex-1 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
+                Close
+              </button>
+              {qrModalCar.retrieval_token && (
+                <button onClick={downloadQrSvg} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-[#1A3C6E] hover:bg-[#0F2044] transition-colors flex items-center justify-center gap-2">
+                  <Download className="w-4 h-4" /> Download
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </SuperLayout>
+
   );
 }
+

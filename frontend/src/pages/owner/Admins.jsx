@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import OwnerLayout from "@/components/layout/OwnerLayout";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -7,9 +7,16 @@ import SkeletonTable from "@/components/ui/SkeletonTable";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusBadge from "@/components/ui/StatusBadge";
 
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
+
 const generateTempPassword = () => Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10).toUpperCase() + "1!";
 
 export default function OwnerAdmins() {
+  const addFieldRefs = useRef({});
+  const scrollToFirstAddError = useScrollToFirstError(["name", "email", "phone"], addFieldRefs);
+
+  const editFieldRefs = useRef({});
+  const scrollToFirstEditError = useScrollToFirstError(["name", "email", "phone"], editFieldRefs);
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -57,7 +64,10 @@ export default function OwnerAdmins() {
     e.preventDefault();
     const errs = validate();
     setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstAddError(errs);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -123,7 +133,10 @@ export default function OwnerAdmins() {
     e.preventDefault();
     const errs = validateEdit();
     setEditErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstEditError(errs);
+      return;
+    }
 
     setEditSaving(true);
     try {
@@ -247,7 +260,7 @@ export default function OwnerAdmins() {
                   </label>
                   <div className="relative">
                     <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="text" value={formData.name} onChange={e => { setFormData({ ...formData, name: e.target.value }); if (errors.name) setErrors(prev => ({ ...prev, name: undefined })); }}
+                    <input ref={el => { if (addFieldRefs.current) addFieldRefs.current.name = el; }}  type="text" value={formData.name} onChange={e => { setFormData({ ...formData, name: e.target.value }); if (errors.name) setErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full pl-9 pr-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${errors.name ? "border-red-400" : "border-gray-200"}`} placeholder="Jane Doe" />
                   </div>
                   {errors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.name}</p>}
@@ -258,7 +271,7 @@ export default function OwnerAdmins() {
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="email" value={formData.email} onChange={e => { setFormData({ ...formData, email: e.target.value }); if (errors.email) setErrors(prev => ({ ...prev, email: undefined })); }}
+                    <input ref={el => { if (addFieldRefs.current) addFieldRefs.current.email = el; }}  type="email" value={formData.email} onChange={e => { setFormData({ ...formData, email: e.target.value }); if (errors.email) setErrors(prev => ({ ...prev, email: undefined })); }}
                       className={`w-full pl-9 pr-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${errors.email ? "border-red-400" : "border-gray-200"}`} placeholder="jane@example.com" />
                   </div>
                   {errors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.email}</p>}
@@ -268,7 +281,7 @@ export default function OwnerAdmins() {
                     Phone Number <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <input type="text" value={formData.phone} onChange={e => { setFormData({ ...formData, phone: e.target.value }); if (errors.phone) setErrors(prev => ({ ...prev, phone: undefined })); }}
+                    <input ref={el => { if (addFieldRefs.current) addFieldRefs.current.phone = el; }}  type="text" value={formData.phone} onChange={e => { setFormData({ ...formData, phone: e.target.value }); if (errors.phone) setErrors(prev => ({ ...prev, phone: undefined })); }}
                       className={`w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${errors.phone ? "border-red-400" : "border-gray-200"}`} placeholder="1234567890" maxLength={10} />
                   </div>
                   {errors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.phone}</p>}
@@ -300,7 +313,7 @@ export default function OwnerAdmins() {
                   </label>
                   <div className="relative">
                     <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="text" value={editFormData.name} onChange={e => { setEditFormData({ ...editFormData, name: e.target.value }); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }}
+                    <input ref={el => { if (editFieldRefs.current) editFieldRefs.current.name = el; }}  type="text" value={editFormData.name} onChange={e => { setEditFormData({ ...editFormData, name: e.target.value }); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full pl-9 pr-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${editErrors.name ? "border-red-400" : "border-gray-200"}`} placeholder="Jane Doe" />
                   </div>
                   {editErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.name}</p>}
@@ -311,7 +324,7 @@ export default function OwnerAdmins() {
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="email" value={editFormData.email} onChange={e => { setEditFormData({ ...editFormData, email: e.target.value }); if (editErrors.email) setEditErrors(prev => ({ ...prev, email: undefined })); }}
+                    <input ref={el => { if (editFieldRefs.current) editFieldRefs.current.email = el; }}  type="email" value={editFormData.email} onChange={e => { setEditFormData({ ...editFormData, email: e.target.value }); if (editErrors.email) setEditErrors(prev => ({ ...prev, email: undefined })); }}
                       className={`w-full pl-9 pr-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${editErrors.email ? "border-red-400" : "border-gray-200"}`} placeholder="jane@example.com" />
                   </div>
                   {editErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.email}</p>}
@@ -321,7 +334,7 @@ export default function OwnerAdmins() {
                     Phone Number <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <input type="text" value={editFormData.phone} onChange={e => { setEditFormData({ ...editFormData, phone: e.target.value }); if (editErrors.phone) setEditErrors(prev => ({ ...prev, phone: undefined })); }}
+                    <input ref={el => { if (editFieldRefs.current) editFieldRefs.current.phone = el; }}  type="text" value={editFormData.phone} onChange={e => { setEditFormData({ ...editFormData, phone: e.target.value }); if (editErrors.phone) setEditErrors(prev => ({ ...prev, phone: undefined })); }}
                       className={`w-full px-3 py-2 rounded-xl border outline-none focus:border-[#1A3C6E] ${editErrors.phone ? "border-red-400" : "border-gray-200"}`} placeholder="1234567890" maxLength={10} />
                   </div>
                   {editErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.phone}</p>}

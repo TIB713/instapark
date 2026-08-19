@@ -4,12 +4,17 @@ import OwnerLayout from "@/components/layout/OwnerLayout";
 import { api, decodeJwt } from "@/lib/api";
 import { fmtDateTimeFull, fmtDate } from "@/lib/time";
 import { toast } from "sonner";
-import { ArrowLeft, User, Phone, Shield, Calendar, Mail, Building2, Clock, CheckCircle2, Check, Download, Edit2, Save, X, Camera, Search, AlertTriangle, CreditCard, Landmark, ChevronDown, Trash2, Star } from "lucide-react";
+import { ArrowLeft, User, Phone, Shield, Calendar, Mail, Building2, Clock, CheckCircle2, Check, Download, Edit2, Save, X, Camera, Search, AlertTriangle, CreditCard, Landmark, ChevronDown, Trash2, Star, CheckCircle } from "lucide-react";
 import EmptyState from "@/components/ui/EmptyState";
+
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
 
 export default function SupervisorDetail() {
   const { sid } = useParams();
   const nav = useNavigate();
+  const fieldRefs = useRef({});
+
+  const scrollToFirstError = useScrollToFirstError(["name", "email", "gender", "phone", "pan_number", "bank_account_number", "bank_ifsc", "aadhar_number", "aadhar_photo", "password", "confirmPassword"], fieldRefs);
   const [supervisor, setSupervisor] = useState(null);
   const [stats, setStats] = useState(null);
   const [events, setEvents] = useState([]);
@@ -222,7 +227,10 @@ export default function SupervisorDetail() {
     e.preventDefault();
     const errs = validateEdit();
     setEditErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstError(errs);
+      return;
+    }
     try {
       const payload = { ...editForm };
       if (!payload.password) delete payload.password;
@@ -347,7 +355,7 @@ export default function SupervisorDetail() {
                   <h1 className="font-heading text-2xl font-bold text-white truncate">{supervisor.name}</h1>
                   {supervisor?.is_verified ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
-                      <Check className="w-3 h-3" /> Verified
+                      <CheckCircle className="w-3 h-3" /> Verified
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
@@ -546,23 +554,23 @@ export default function SupervisorDetail() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Name</label>
-                      <input value={editForm.name} onChange={e => { setEditForm({ ...editForm, name: e.target.value }); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.name = el; }}  value={editForm.name} onChange={e => { setEditForm({ ...editForm, name: e.target.value }); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                       {editErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.name}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone</label>
-                      <input value={editForm.phone} onChange={e => { setEditForm({ ...editForm, phone: e.target.value }); if (editErrors.phone) setEditErrors(prev => ({ ...prev, phone: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.phone = el; }}  value={editForm.phone} onChange={e => { setEditForm({ ...editForm, phone: e.target.value }); if (editErrors.phone) setEditErrors(prev => ({ ...prev, phone: undefined })); }} className={`w-full px-4 py-2 rounded-xl border ${editErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                       {editErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.phone}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email <span className="text-red-500">*</span></label>
-                      <input value={editForm.email || ""} onChange={e => { setEditForm({ ...editForm, email: e.target.value }); if (editErrors.email) setEditErrors(prev => ({ ...prev, email: undefined })); }}
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.email = el; }}  value={editForm.email || ""} onChange={e => { setEditForm({ ...editForm, email: e.target.value }); if (editErrors.email) setEditErrors(prev => ({ ...prev, email: undefined })); }}
                         className={`w-full px-4 py-2 rounded-xl border ${editErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                       {editErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.email}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
-                      <select value={editForm.gender}
+                      <select ref={el => { if (fieldRefs.current) fieldRefs.current.gender = el; }}  value={editForm.gender}
                         onChange={e => { setEditForm({ ...editForm, gender: e.target.value }); if (editErrors.gender) setEditErrors(prev => ({ ...prev, gender: undefined })); }}
                         className={`w-full px-4 py-2 rounded-xl border ${editErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}>
                         <option value="" disabled>Select gender</option>
@@ -573,27 +581,27 @@ export default function SupervisorDetail() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Number</label>
-                      <input value={editForm.pan_number} onChange={e => { setEditForm({ ...editForm, pan_number: e.target.value.toUpperCase().slice(0, 10) }); if (editErrors.pan_number) setEditErrors(prev => ({ ...prev, pan_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.pan_number = el; }}  value={editForm.pan_number} onChange={e => { setEditForm({ ...editForm, pan_number: e.target.value.toUpperCase().slice(0, 10) }); if (editErrors.pan_number) setEditErrors(prev => ({ ...prev, pan_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                       {editErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.pan_number}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account</label>
-                      <input value={editForm.bank_account_number} onChange={e => { setEditForm({ ...editForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18) }); if (editErrors.bank_account_number) setEditErrors(prev => ({ ...prev, bank_account_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.bank_account_number = el; }}  value={editForm.bank_account_number} onChange={e => { setEditForm({ ...editForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18) }); if (editErrors.bank_account_number) setEditErrors(prev => ({ ...prev, bank_account_number: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                       {editErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.bank_account_number}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC</label>
-                      <input value={editForm.bank_ifsc} onChange={e => { setEditForm({ ...editForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11) }); if (editErrors.bank_ifsc) setEditErrors(prev => ({ ...prev, bank_ifsc: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.bank_ifsc = el; }}  value={editForm.bank_ifsc} onChange={e => { setEditForm({ ...editForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11) }); if (editErrors.bank_ifsc) setEditErrors(prev => ({ ...prev, bank_ifsc: undefined })); }} className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                       {editErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.bank_ifsc}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
-                      <input value={editForm.aadhar_number || ""} inputMode="numeric"
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.aadhar_number = el; }}  value={editForm.aadhar_number || ""} inputMode="numeric"
                         onChange={e => { setEditForm({ ...editForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12) }); if (editErrors.aadhar_number) setEditErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
                         className={`w-full font-mono px-4 py-2 rounded-xl border ${editErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                       {editErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.aadhar_number}</p>}
                     </div>
-                    <div>
+                    <div ref={el => { if (fieldRefs.current) fieldRefs.current.aadhar_photo = el; }} >
                       <div className="text-[10px] uppercase font-bold text-gray-400 mb-2">Aadhar Photo</div>
                       <div className="relative group inline-block w-full">
                         {supervisor.aadhar_photo ? (
@@ -601,7 +609,7 @@ export default function SupervisorDetail() {
                             <img src={supervisor.aadhar_photo} alt="Aadhar" className={`h-32 w-full object-cover rounded-xl border ${editErrors.aadhar_photo ? "border-red-400" : "border-gray-200"} cursor-pointer hover:opacity-90 transition`} onClick={() => setLightbox(supervisor.aadhar_photo)} />
                             <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
                               <Camera className="w-5 h-5 text-white" />
-                              <input type="file" className="hidden" accept="image/*" onChange={handleAadharPhotoUpload} disabled={uploading} />
+                              <input ref={el => { if (fieldRefs.current) fieldRefs.current.aadhar_photo = el; }}  type="file" className="hidden" accept="image/*" onChange={handleAadharPhotoUpload} disabled={uploading} />
                             </label>
                             <button type="button" onClick={async (e) => {
                               e.stopPropagation();
@@ -619,7 +627,7 @@ export default function SupervisorDetail() {
                           <label className={`flex flex-col items-center justify-center h-32 w-full bg-gray-50 border-2 border-dashed ${editErrors.aadhar_photo ? "border-red-400 bg-red-50" : "border-gray-200"} rounded-xl cursor-pointer hover:bg-gray-100 hover:border-gray-300 transition-all`}>
                             <Camera className="w-6 h-6 text-gray-400 mb-2" />
                             <span className="text-xs text-gray-500 font-semibold">Upload Aadhar</span>
-                            <input type="file" className="hidden" accept="image/*" onChange={handleAadharPhotoUpload} disabled={uploading} />
+                            <input ref={el => { if (fieldRefs.current) fieldRefs.current.aadhar_photo = el; }}  type="file" className="hidden" accept="image/*" onChange={handleAadharPhotoUpload} disabled={uploading} />
                           </label>
                         )}
                       </div>
@@ -628,11 +636,13 @@ export default function SupervisorDetail() {
                     <>
                       <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">New Password (leave blank to keep current)</label>
-                        <input type="password" value={editForm.password || ""} name="new-supervisor-password" autoComplete="new-password" onChange={e => setEditForm({ ...editForm, password: e.target.value })} className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]" />
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current.password = el; }}  type="password" value={editForm.password || ""} name="new-supervisor-password" autoComplete="new-password" onChange={e => setEditForm({ ...editForm, password: e.target.value })} className={`w-full px-4 py-2 rounded-xl border ${editErrors.password ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                        {editErrors.password && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.password}</p>}
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Confirm Password</label>
-                        <input type="password" value={editForm.confirmPassword || ""} name="new-supervisor-confirm-password" autoComplete="new-password" onChange={e => setEditForm({ ...editForm, confirmPassword: e.target.value })} className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]" />
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current.confirmPassword = el; }}  type="password" value={editForm.confirmPassword || ""} name="new-supervisor-confirm-password" autoComplete="new-password" onChange={e => setEditForm({ ...editForm, confirmPassword: e.target.value })} className={`w-full px-4 py-2 rounded-xl border ${editErrors.confirmPassword ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
+                        {editErrors.confirmPassword && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.confirmPassword}</p>}
                       </div>
                     </>
                   </div>

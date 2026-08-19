@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import SuperLayout from "@/components/layout/SuperLayout";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, CreditCard } from "lucide-react";
 import SkeletonTable from "@/components/ui/SkeletonTable";
 import EmptyState from "@/components/ui/EmptyState";
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
 
 export default function Plans() {
   const [plans, setPlans] = useState([]);
@@ -16,6 +17,9 @@ export default function Plans() {
   const [form, setForm] = useState({
     name: "", max_events: "", max_cars: "", max_hotels: ""
   });
+  const [errors, setErrors] = useState({});
+  const fieldRefs = useRef({});
+  const scrollToFirstError = useScrollToFirstError(["name", "max_events", "max_cars", "max_hotels"], fieldRefs);
 
   const fetchPlans = async () => {
     try {
@@ -35,6 +39,7 @@ export default function Plans() {
   const openNew = () => {
     setEditing(null);
     setForm({ name: "", max_events: "", max_cars: "", max_hotels: "" });
+    setErrors({});
     setOpen(true);
   };
 
@@ -46,6 +51,7 @@ export default function Plans() {
       max_cars: plan.max_cars,
       max_hotels: plan.max_hotels
     });
+    setErrors({});
     setOpen(true);
   };
 
@@ -64,10 +70,17 @@ export default function Plans() {
     e.preventDefault();
     if (saving) return;
 
-    if (!form.name.trim()) return toast.error("Plan name is required");
-    if (form.max_events === "" || isNaN(form.max_events)) return toast.error("Max Events is required");
-    if (form.max_cars === "" || isNaN(form.max_cars)) return toast.error("Max Cars is required");
-    if (form.max_hotels === "" || isNaN(form.max_hotels)) return toast.error("Max Hotels is required");
+    const newErrors = {};
+    if (!form.name.trim()) newErrors.name = "Plan name is required";
+    if (form.max_events === "" || isNaN(form.max_events)) newErrors.max_events = "Max Events is required";
+    if (form.max_cars === "" || isNaN(form.max_cars)) newErrors.max_cars = "Max Cars is required";
+    if (form.max_hotels === "" || isNaN(form.max_hotels)) newErrors.max_hotels = "Max Hotels is required";
+
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      scrollToFirstError(newErrors);
+      return;
+    }
 
     const payload = {
       name: form.name.trim(),
@@ -181,48 +194,56 @@ export default function Plans() {
             <div className="p-6">
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Plan Name</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Plan Name <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-gray-50/50 focus:bg-white transition-colors"
+                    onChange={(e) => { setForm({ ...form, name: e.target.value }); if(errors.name) setErrors(prev => ({ ...prev, name: undefined })); }}
+                    className={`w-full border rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-gray-50/50 focus:bg-white transition-colors ${errors.name ? "border-red-400" : "border-gray-200"}`}
                     placeholder="e.g. Starter, Pro, Enterprise"
                     disabled={saving}
+                    ref={el => { if (fieldRefs.current) fieldRefs.current.name = el; }}
                   />
+                  {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Events</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Events <span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     value={form.max_events}
-                    onChange={(e) => setForm({ ...form, max_events: e.target.value })}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-gray-50/50 focus:bg-white transition-colors"
+                    onChange={(e) => { setForm({ ...form, max_events: e.target.value }); if(errors.max_events) setErrors(prev => ({ ...prev, max_events: undefined })); }}
+                    className={`w-full border rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-gray-50/50 focus:bg-white transition-colors ${errors.max_events ? "border-red-400" : "border-gray-200"}`}
                     placeholder="e.g. 10"
                     disabled={saving}
+                    ref={el => { if (fieldRefs.current) fieldRefs.current.max_events = el; }}
                   />
+                  {errors.max_events && <p className="text-red-500 text-xs mt-1">{errors.max_events}</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Cars</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Cars <span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     value={form.max_cars}
-                    onChange={(e) => setForm({ ...form, max_cars: e.target.value })}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-gray-50/50 focus:bg-white transition-colors"
+                    onChange={(e) => { setForm({ ...form, max_cars: e.target.value }); if(errors.max_cars) setErrors(prev => ({ ...prev, max_cars: undefined })); }}
+                    className={`w-full border rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-gray-50/50 focus:bg-white transition-colors ${errors.max_cars ? "border-red-400" : "border-gray-200"}`}
                     placeholder="e.g. 500"
                     disabled={saving}
+                    ref={el => { if (fieldRefs.current) fieldRefs.current.max_cars = el; }}
                   />
+                  {errors.max_cars && <p className="text-red-500 text-xs mt-1">{errors.max_cars}</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Hotels</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Hotels <span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     value={form.max_hotels}
-                    onChange={(e) => setForm({ ...form, max_hotels: e.target.value })}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-gray-50/50 focus:bg-white transition-colors"
+                    onChange={(e) => { setForm({ ...form, max_hotels: e.target.value }); if(errors.max_hotels) setErrors(prev => ({ ...prev, max_hotels: undefined })); }}
+                    className={`w-full border rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-gray-50/50 focus:bg-white transition-colors ${errors.max_hotels ? "border-red-400" : "border-gray-200"}`}
                     placeholder="e.g. 2"
                     disabled={saving}
+                    ref={el => { if (fieldRefs.current) fieldRefs.current.max_hotels = el; }}
                   />
+                  {errors.max_hotels && <p className="text-red-500 text-xs mt-1">{errors.max_hotels}</p>}
                 </div>
                 <div className="pt-4 flex gap-3">
                   <button

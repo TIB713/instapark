@@ -5,14 +5,19 @@ import SuperLayout from "@/components/layout/SuperLayout";
 import { api } from "@/lib/api";
 import { fmtDate } from "@/lib/time";
 import { toast } from "sonner";
-import { Plus, Search, Building2, Camera, X, Hotel } from "lucide-react";
+import { Plus, Search, Building2, Camera, X, Hotel, Check, AlertTriangle, CheckCircle } from "lucide-react";
 import { State, City } from "country-state-city";
 import SkeletonTable from "@/components/ui/SkeletonTable";
 import EmptyState from "@/components/ui/EmptyState";
 
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
+
 const generateTempPassword = () => Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10).toUpperCase() + "1!";
 
 export default function Hotels() {
+  const fieldRefs = useRef({});
+
+  const scrollToFirstError = useScrollToFirstError(["name", "email", "phone", "contact_person_phone", "password", "address", "city", "state", "total_valet_slots", "contact_person_name", "plan", "gate_timer_minutes"], fieldRefs);
   const [rows, setRows] = useState([]);
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +87,10 @@ export default function Hotels() {
     if (saving) return;
     const errs = validate();
     setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstError(errs);
+      return;
+    }
     setSaving(true);
     try {
       const { data: newProvider } = await api.post("/providers", {
@@ -286,9 +294,17 @@ export default function Hotels() {
                     <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${(h.provider_is_verified && h.is_active) ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
                       {(h.provider_is_verified && h.is_active) ? "Active" : "Inactive"}
                     </span>
-                    <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${h.provider_is_verified ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                      {h.provider_is_verified ? "Verified" : "Unverified"}
-                    </span>
+                    {
+  h.provider_is_verified ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium shrink-0">
+      <CheckCircle className="w-3 h-3" /> Verified
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium shrink-0">
+      <AlertTriangle className="w-3 h-3" /> Unverified
+    </span>
+  )
+}
                   </div>
                   <span className="text-gray-400 text-xs truncate block">{h.city}, {h.state}</span>
                 </div>
@@ -343,7 +359,7 @@ export default function Hotels() {
                     ].map(([l, k, t]) => (
                       <div key={k}>
                         <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">{l} <span className="text-red-500">*</span></label>
-                        <input type={t} value={form[k]}
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current[k] = el; }}  type={t} value={form[k]}
                                onChange={(e) => {
                                  let val = e.target.value;
                                  if (k === "phone") val = val.replace(/\D/g, "").slice(0, 10);
@@ -361,14 +377,14 @@ export default function Hotels() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Address <span className="text-red-500">*</span></label>
-                      <input type="text" value={form.address}
+                      <input ref={el => { if (fieldRefs.current) fieldRefs.current.address = el; }}  type="text" value={form.address}
                         onChange={e => { setForm(prev => ({ ...prev, address: e.target.value})); if (errors.address) setErrors(prev => ({ ...prev, address: undefined })); }}
                         className={`mt-1 w-full px-3 py-2 rounded-xl border ${errors.address ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1D4ED8] transition-colors`} />
 { errors.address && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.address}</p> }
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">State <span className="text-red-500">*</span></label>
-                      <select
+                      <select ref={el => { if (fieldRefs.current) fieldRefs.current.state = el; }} 
                         value={form.state || ""}
                         onChange={e => { setForm(prev => ({ ...prev, state: e.target.value, city: "" })); if (errors.state) setErrors(prev => ({ ...prev, state: undefined })); }}
                         className={`mt-1 w-full px-3 py-2 rounded-xl border ${errors.state ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1D4ED8] transition-colors`}
@@ -382,7 +398,7 @@ export default function Hotels() {
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">City <span className="text-red-500">*</span></label>
-                      <select
+                      <select ref={el => { if (fieldRefs.current) fieldRefs.current.city = el; }} 
                         value={form.city || ""}
                         onChange={e => { setForm(prev => ({ ...prev, city: e.target.value })); if (errors.city) setErrors(prev => ({ ...prev, city: undefined })); }}
                         disabled={!form.state}
@@ -403,7 +419,7 @@ export default function Hotels() {
                   <div className="flex items-center gap-4 py-2">
                     <div className="flex-1">
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Plan</label>
-                      <select value={form.plan} onChange={(e) => { setForm({ ...form, plan: e.target.value}); if (errors.plan) setErrors(prev => ({ ...prev, plan: undefined })); }}
+                      <select ref={el => { if (fieldRefs.current) fieldRefs.current.plan = el; }}  value={form.plan} onChange={(e) => { setForm({ ...form, plan: e.target.value}); if (errors.plan) setErrors(prev => ({ ...prev, plan: undefined })); }}
                               className={`mt-1 w-full px-3 py-2 rounded-xl border ${errors.plan ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1D4ED8]`}>
                         <option value="starter">Starter</option>
                         <option value="pro">Pro</option>
@@ -444,14 +460,14 @@ export default function Hotels() {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                       <div>
                         <label className="text-xs font-semibold text-gray-600 uppercase">Valet Slots <span className="text-red-500">*</span></label>
-                        <input type="number" value={form.total_valet_slots}
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current.total_valet_slots = el; }}  type="number" value={form.total_valet_slots}
                                onChange={(e) => { setForm({ ...form, total_valet_slots: e.target.value}); if (errors.total_valet_slots) setErrors(prev => ({ ...prev, total_valet_slots: undefined })); }}
                                className={`mt-1 w-full px-3 py-2 rounded-xl border ${errors.total_valet_slots ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1D4ED8]`} />
 { errors.total_valet_slots && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.total_valet_slots}</p> }
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 uppercase">Gate Timer (min)</label>
-                        <input type="number" min="1" max="30" value={form.gate_timer_minutes}
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current.gate_timer_minutes = el; }}  type="number" min="1" max="30" value={form.gate_timer_minutes}
                                onChange={(e) => { setForm({ ...form, gate_timer_minutes: e.target.value}); if (errors.gate_timer_minutes) setErrors(prev => ({ ...prev, gate_timer_minutes: undefined })); }}
                                className={`mt-1 w-full px-3 py-2 rounded-xl border ${errors.gate_timer_minutes ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1D4ED8]`} />
 { errors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.gate_timer_minutes}</p> }
@@ -466,14 +482,14 @@ export default function Hotels() {
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 uppercase">Contact Name <span className="text-red-500">*</span></label>
-                        <input type="text" value={form.contact_person_name}
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current.contact_person_name = el; }}  type="text" value={form.contact_person_name}
                                onChange={(e) => { setForm({ ...form, contact_person_name: e.target.value}); if (errors.contact_person_name) setErrors(prev => ({ ...prev, contact_person_name: undefined })); }}
                                className={`mt-1 w-full px-3 py-2 rounded-xl border ${errors.contact_person_name ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1D4ED8]`} />
 { errors.contact_person_name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.contact_person_name}</p> }
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-600 uppercase">Contact Phone <span className="text-red-500">*</span></label>
-                        <input type="tel" value={form.contact_person_phone} inputMode="numeric"
+                        <input ref={el => { if (fieldRefs.current) fieldRefs.current.contact_person_phone = el; }}  type="tel" value={form.contact_person_phone} inputMode="numeric"
                                onChange={(e) => { setForm({ ...form, contact_person_phone: e.target.value.replace(/\D/g, "").slice(0, 10)}); if (errors.contact_person_phone) setErrors(prev => ({ ...prev, contact_person_phone: undefined })); }}
                                className={`mt-1 w-full px-3 py-2 rounded-xl border ${errors.contact_person_phone ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1D4ED8]`} />
 { errors.contact_person_phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.contact_person_phone}</p> }
@@ -488,7 +504,7 @@ export default function Hotels() {
                   <div className="space-y-2 mb-2"> 
                     {gates.map((gate, i) => ( 
                       <div key={i} className="flex gap-2 items-center"> 
-                        <input 
+                        <input
                           type="text" 
                           placeholder="Gate name" 
                           value={gate} 
@@ -529,7 +545,7 @@ export default function Hotels() {
                   <div className="space-y-2 mb-2"> 
                     {zones.map((zone, i) => ( 
                       <div key={i} className="flex gap-2 items-center"> 
-                        <input 
+                        <input
                           type="text" 
                           placeholder="Zone name (e.g. A)" 
                           value={zone.name} 

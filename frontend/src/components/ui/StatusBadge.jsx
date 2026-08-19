@@ -52,6 +52,24 @@ const CONFIG = {
     pulse: false,
     spin: false,
   },
+  closed: {
+    className: "bg-gray-100 text-gray-600",
+    Icon: CheckCheck,
+    pulse: false,
+    spin: false,
+  },
+  active: {
+    className: "bg-emerald-100 text-emerald-700",
+    Icon: CheckCircle2,
+    pulse: false,
+    spin: false,
+  },
+  inactive: {
+    className: "bg-red-100 text-red-600",
+    Icon: X,
+    pulse: false,
+    spin: false,
+  },
 };
 
 function humanizeStatus(status) {

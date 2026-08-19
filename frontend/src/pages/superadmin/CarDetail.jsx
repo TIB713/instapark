@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import SuperLayout from "@/components/layout/SuperLayout";
 import { api } from "@/lib/api";
-import { fmtTime, fmtDate, fmtDateTime, fmtDateTimeFull } from "@/lib/time";
+import { fmtTime, fmtDate, fmtDateTime, fmtDateTimeFull, fmtDuration } from "@/lib/time";
 import { toast } from "sonner"; 
 import { ArrowLeft, Bell, Car, Calendar, MapPin, User, Clock, Star, Camera, Building2, AlertTriangle, Download, X, UserCog } from "lucide-react"; 
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -441,6 +441,10 @@ export default function CarDetail() {
                       },
                       { label: "Car Type", value: v.car_type === "premium" ? "Premium" : null },
                       { label: "Duration", value: v.duration_minutes ? `${v.duration_minutes} min` : null },
+                      { label: "Time to Park", value: v.park_minutes != null ? fmtDuration(v.park_minutes) : null },
+                      { label: "Retrieval → Gate", value: v.retrieval_to_gate_minutes != null ? fmtDuration(v.retrieval_to_gate_minutes) : null },
+                      { label: "Gate Wait", value: v.gate_wait_minutes != null ? fmtDuration(v.gate_wait_minutes) : null },
+                      { label: "Re-park Time", value: v.repark_minutes != null ? fmtDuration(v.repark_minutes) : null },
                       { label: "Notes", value: v.notes },
                     ].filter(f => f.value && f.value !== "").map((f) => (
                       <div key={f.label}>

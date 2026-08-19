@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import SuperLayout from "@/components/layout/SuperLayout";
 import { api, decodeJwt } from "@/lib/api";
 import { toast } from "sonner";
-import { Search, Users, Shield, ChevronDown } from "lucide-react";
+import { Search, Users, Shield, ChevronDown, Check, AlertTriangle, CheckCircle } from "lucide-react";
 import SkeletonTable from "@/components/ui/SkeletonTable";
 import EmptyState from "@/components/ui/EmptyState";
 
@@ -186,9 +186,17 @@ export default function Supervisors() {
                           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${(s.is_verified && s.is_active) ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
                             {(s.is_verified && s.is_active) ? "Active" : "Inactive"}
                           </span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.is_verified ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                            {s.is_verified ? "Verified" : "Unverified"}
-                          </span>
+                          {
+  s.is_verified ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+      <CheckCircle className="w-3 h-3" /> Verified
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+      <AlertTriangle className="w-3 h-3" /> Unverified
+    </span>
+  )
+}
                         </div>
                       </td>
                     </tr>

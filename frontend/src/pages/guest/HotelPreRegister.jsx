@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react"; 
+import { useEffect, useState, useRef } from "react"; 
 import { useParams } from "react-router-dom"; 
 import { api } from "@/lib/api"; 
 import { Building, User, Phone, Calendar, MapPin, ChevronDown, Loader2 } from "lucide-react"; 
+import { useScrollToFirstError } from "../../hooks/useScrollToFirstError"; 
 
 export default function HotelPreRegister() { 
   const { hotelToken } = useParams(); 
@@ -24,6 +25,11 @@ export default function HotelPreRegister() {
     expected_arrival: "", 
     guest_notes: "",
   }); 
+
+  const fieldRefs = useRef({});
+  const scrollToFirstError = useScrollToFirstError([
+    'event_id', 'guest_name', 'guest_phone', 'plate', 'make', 'color', 'expected_arrival'
+  ], fieldRefs);
 
   const validatePlate = (plate) => { 
     const cleaned = plate.replace(/[-\s]/g, "").toUpperCase(); 
@@ -65,7 +71,10 @@ export default function HotelPreRegister() {
   const submit = async () => {
     const errs = validate();
     setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length > 0) {
+      scrollToFirstError(errs);
+      return;
+    }
     
     const normalizePhone = (p) => p.replace(/^(\+91|91|0)/, '').replace(/\s|-/g, '');
     const normalizedPhone = normalizePhone(form.guest_phone.trim());
@@ -177,6 +186,7 @@ export default function HotelPreRegister() {
                 <div className="relative"> 
                   <select 
                     value={form.event_id} 
+                    ref={el => { if (fieldRefs && fieldRefs.current) fieldRefs.current.event_id = el; }}
                     onChange={e => { setForm({...form, event_id: e.target.value}); if (errors.event_id) setErrors(prev => ({ ...prev, event_id: undefined })); }} 
                     className={inp + " appearance-none pr-8"} 
                   > 
@@ -198,6 +208,7 @@ export default function HotelPreRegister() {
           <div> 
             <label className={lbl}>Your Name *</label> 
             <input className={inp} placeholder="Rahul Shah" 
+              ref={el => { if (fieldRefs && fieldRefs.current) fieldRefs.current.guest_name = el; }}
               value={form.guest_name} onChange={e => { setForm({...form, guest_name: e.target.value}); if (errors.guest_name) setErrors(prev => ({ ...prev, guest_name: undefined })); }} />
 { errors.guest_name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.guest_name}</p> } 
           </div> 
@@ -207,6 +218,7 @@ export default function HotelPreRegister() {
             <label className={lbl}>Mobile Number * <span className="text-gray-400 font-normal normal-case">(QR will be sent here)</span></label> 
             <input className={inp} placeholder="10-digit number" 
               type="tel" value={form.guest_phone} 
+              ref={el => { if (fieldRefs && fieldRefs.current) fieldRefs.current.guest_phone = el; }}
               onChange={e => { setForm({...form, guest_phone: e.target.value.replace(/\D/g, "").slice(0, 10)}); if (errors.guest_phone) setErrors(prev => ({ ...prev, guest_phone: undefined })); }} />
 { errors.guest_phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.guest_phone}</p> } 
           </div> 
@@ -214,13 +226,14 @@ export default function HotelPreRegister() {
           {/* Divider */} 
           <div className="border-t border-gray-100 pt-2"> 
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Vehicle Details</p> 
-          </div> 
+          </div>
 
           {/* Plate */} 
           <div> 
             <label className={lbl}>Number Plate *</label> 
             <input className={inp + " font-mono tracking-widest uppercase"} placeholder="GJ01AB1234" 
               value={form.plate} 
+              ref={el => { if (fieldRefs && fieldRefs.current) fieldRefs.current.plate = el; }}
               onChange={e => { setForm({...form, plate: e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 11)}); if (errors.plate) setErrors(prev => ({ ...prev, plate: undefined })); }} />
 { errors.plate && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.plate}</p> } 
           </div> 
@@ -229,7 +242,9 @@ export default function HotelPreRegister() {
           <div> 
             <label className={lbl}>Make / Model *</label> 
             <input className={inp} placeholder="Honda City" 
-              value={form.make} onChange={e => { setForm({...form, make: e.target.value}); if (errors.make) setErrors(prev => ({ ...prev, make: undefined })); }} />
+              value={form.make} 
+              ref={el => { if (fieldRefs && fieldRefs.current) fieldRefs.current.make = el; }}
+              onChange={e => { setForm({...form, make: e.target.value}); if (errors.make) setErrors(prev => ({ ...prev, make: undefined })); }} />
 { errors.make && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.make}</p> } 
           </div> 
 
@@ -237,7 +252,9 @@ export default function HotelPreRegister() {
           <div> 
             <label className={lbl}>Color *</label> 
             <input className={inp} placeholder="White" 
-              value={form.color} onChange={e => { setForm({...form, color: e.target.value}); if (errors.color) setErrors(prev => ({ ...prev, color: undefined })); }} />
+              value={form.color} 
+              ref={el => { if (fieldRefs && fieldRefs.current) fieldRefs.current.color = el; }}
+              onChange={e => { setForm({...form, color: e.target.value}); if (errors.color) setErrors(prev => ({ ...prev, color: undefined })); }} />
 { errors.color && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.color}</p> } 
           </div> 
 
@@ -246,6 +263,7 @@ export default function HotelPreRegister() {
             <label className={lbl}>Expected Arrival Time <span className="text-gray-400 font-normal normal-case">(optional)</span></label> 
             <input type="datetime-local" className={inp} 
               value={form.expected_arrival} 
+              ref={el => { if (fieldRefs && fieldRefs.current) fieldRefs.current.expected_arrival = el; }}
               onChange={e => { setForm({...form, expected_arrival: e.target.value}); if (errors.expected_arrival) setErrors(prev => ({ ...prev, expected_arrival: undefined })); }} />
 { errors.expected_arrival && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.expected_arrival}</p> } 
           </div> 

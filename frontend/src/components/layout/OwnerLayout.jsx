@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   Car, LogOut, LayoutDashboard, Hotel, Users,
-  CalendarDays, Menu, ChevronRight, Shield, ShieldCheck, QrCode, Bell
+  CalendarDays, Menu, ChevronRight, Shield, ShieldCheck, Bell
 } from "lucide-react";
 import { api, decodeJwt } from "@/lib/api";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
@@ -19,7 +19,7 @@ export default function OwnerLayout({ title, children }) {
   const payload = token ? decodeJwt(token) : null;
   const name = payload?.name || localStorage.getItem("owner_name") || "Owner";
   const providerType = payload?.provider_type || localStorage.getItem("owner_provider_type") || "valet_provider";
-  
+
   const [unreadCount, setUnreadCount] = useState(0);
 
   // Poll for unread count
@@ -32,15 +32,15 @@ export default function OwnerLayout({ title, children }) {
         // fail silently for polling
       }
     };
-    
+
     // Initial fetch if token exists
     if (token) fetchCount();
-    
+
     // Poll every 30s
     const interval = setInterval(() => {
       if (token) fetchCount();
     }, 30000);
-    
+
     return () => clearInterval(interval);
   }, [token]);
 
@@ -49,7 +49,7 @@ export default function OwnerLayout({ title, children }) {
     { to: "/provider/hotels", label: "Hotels", icon: Hotel, showFor: "valet_provider" },
     { to: "/provider/events", label: "Events", icon: CalendarDays },
     { to: "/provider/cars", label: "Cars", icon: Car },
-    { to: "/provider/qr-codes", label: "QR Codes", icon: QrCode },
+
     { to: "/provider/incidents", label: "Incidents", icon: Shield },
     { to: "/provider/team", label: "Team", icon: Users },
     { to: "/provider/admins", label: "Admins", icon: ShieldCheck },
@@ -78,7 +78,7 @@ export default function OwnerLayout({ title, children }) {
         <div>
           <div className={`flex items-center px-3 mb-6 ${expanded ? "justify-between" : "justify-center"}`}>
             {expanded && (
-              <Link to="/owner/dashboard" className="flex items-center gap-2">
+              <Link to="/provider/dashboard" className="flex items-center gap-2">
                 <Car className="w-5 h-5 shrink-0" />
                 <span className="font-heading text-base font-extrabold tracking-tight whitespace-nowrap">INSTAPARK</span>
               </Link>
@@ -170,7 +170,7 @@ export default function OwnerLayout({ title, children }) {
                 <SheetContent side="left" className="p-0 w-[240px] bg-[#0F2044] text-white">
                   <div className="flex flex-col h-full px-4 py-6">
                     <div>
-                      <Link to="/owner/dashboard" className="flex items-center gap-2 mb-8">
+                      <Link to="/provider/dashboard" className="flex items-center gap-2 mb-8">
                         <Car className="w-6 h-6" />
                         <span className="font-heading text-lg font-extrabold tracking-tight">INSTAPARK</span>
                       </Link>
