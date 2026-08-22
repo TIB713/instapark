@@ -27,6 +27,7 @@ import HotelPreRegister from "@/pages/guest/HotelPreRegister";
 import PassView from "@/pages/guest/PassView";
 import Landing from "@/pages/Landing";
 import HostPortal from "@/pages/guest/HostPortal";
+import LiveQueueView from "@/pages/guest/LiveQueueView";
 
 // Owner Portal Imports
 import OwnerLogin from "@/pages/owner/Login";
@@ -128,6 +129,7 @@ function App() {
           <Route path="/hotel-register/:hotelToken" element={<HotelPreRegister />} />
           <Route path="/pass/:passToken" element={<PassView />} />
           <Route path="/host-portal/:hostToken" element={<HostPortal />} />
+          <Route path="/queue/:token" element={<LiveQueueView />} />
         </Routes></ErrorBoundary>
       </BrowserRouter>
       <Toaster richColors position="top-center" />

@@ -100,10 +100,10 @@ export default function LiveMonitor() {
   const total = queue.length;
   const waiting = queue.filter(c => c.status === "CHECKED_IN").length;
   const parked = queue.filter(c => c.status === "PARKED").length;
-  const retrievals = queue.filter(c => ["RETRIEVAL_REQUESTED", "BEING_FETCHED"].includes(c.status)).length;
+  const retrievals = queue.filter(c => ["RETRIEVAL_REQUESTED", "ACCEPTED", "BEING_FETCHED"].includes(c.status)).length;
 
   const getDriverName = (car) => {
-    if (["RETRIEVAL_REQUESTED", "BEING_FETCHED"].includes(car.status)) return car.retrieval_driver_name || car.parked_driver_name || "—";
+    if (["RETRIEVAL_REQUESTED", "ACCEPTED", "BEING_FETCHED"].includes(car.status)) return car.retrieval_driver_name || car.parked_driver_name || "—";
     if (car.status === "PARKED") return car.parked_driver_name || "—";
     return car.check_in_driver_name || "—";
   };
@@ -250,7 +250,7 @@ export default function LiveMonitor() {
                       {(() => {
                         const paginatedQueue = queue.slice((queuePage - 1) * 10, queuePage * 10);
                         return paginatedQueue.map(car => {
-                          const isUrgent = ["RETRIEVAL_REQUESTED", "BEING_FETCHED"].includes(car.status);
+                          const isUrgent = ["RETRIEVAL_REQUESTED", "ACCEPTED", "BEING_FETCHED"].includes(car.status);
                           const isLate = car.minutes_in_current_status > 10 && !["DELIVERED", "PARKED"].includes(car.status);
                           return (
                             <tr key={car.car_id} className={isUrgent ? "bg-amber-50" : "hover:bg-gray-50"}>

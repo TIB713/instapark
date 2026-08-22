@@ -7,6 +7,21 @@ import { toast } from "sonner";
 import { ArrowLeft, Bell, Car, Calendar, MapPin, User, Clock, Star, Camera, Building2, AlertTriangle, Download, X, UserCog } from "lucide-react"; 
 import StatusBadge from "@/components/ui/StatusBadge";
 import DriverPathMap from "@/components/DriverPathMap";
+import CarLogTimeline from "@/components/CarLogTimeline";
+
+function VisitTimelineFetcher({ carId, setLightbox }) {
+  const [log, setLog] = useState(null);
+  
+  useEffect(() => {
+    api.get(`/cars/${carId}/log`)
+      .then(({ data }) => setLog(data))
+      .catch(() => toast.error("Failed to load car log"));
+  }, [carId]);
+  
+  if (!log) return <div className="text-sm text-gray-500 italic py-4">Loading timeline...</div>;
+  return <CarLogTimeline log={log} setLightbox={setLightbox} />;
+}
+
 export default function CarDetail() { 
   const { plate } = useParams(); 
   const decodedPlate = decodeURIComponent(plate).toUpperCase(); 
@@ -429,7 +444,7 @@ export default function CarDetail() {
                       { label: "Alternate Phone", value: v.alt_guest_phone },
                       {
                         label: "Key Tag",
-                        value: (["PARKED", "RETRIEVAL_REQUESTED", "BEING_FETCHED", "WAITING_AT_GATE", "REPARKING"].includes(v.status) && v.key_tag)
+                        value: (["PARKED", "RETRIEVAL_REQUESTED", "ACCEPTED", "BEING_FETCHED", "WAITING_AT_GATE", "REPARKING"].includes(v.status) && v.key_tag)
                           ? `#${v.key_tag}`
                           : null
                       },
@@ -473,204 +488,34 @@ export default function CarDetail() {
                     </div>
                   )}
 
-                  {["PARKED", "RETRIEVAL_REQUESTED", "BEING_FETCHED", "WAITING_AT_GATE", "DELIVERED", "REPARKING"].includes(v.status) && (
+                  {["PARKED", "RETRIEVAL_REQUESTED", "ACCEPTED", "BEING_FETCHED", "WAITING_AT_GATE", "DELIVERED", "REPARKING"].includes(v.status) && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setPathMapVisit(v.car_id); }}
                       className="text-sm font-semibold text-[#1A3C6E] hover:underline flex items-center gap-1 mb-4"
                     >
-                      See Path â†’
+                      See Path →
                     </button>
                   )}
 
-                  <div className="relative"> 
-              
-                  {/* Timeline steps */} 
-                  <div className="flex flex-col sm:flex-row items-start gap-y-6 sm:gap-y-0 w-full overflow-x-auto pb-4">
-                  {[ 
-                    v.check_in_time && { 
-                      color: "bg-blue-500", 
-                      icon: <User className="w-3.5 h-3.5 text-white" />, 
-                      label: "Checked In", 
-                      time: v.check_in_time,
-                      statusOrder: 1,
-                      driver: v.check_in_driver, 
-                      note: v.notes, 
-                      photos: v.photos?.filter(p => p.type === "checkin"), 
-                    }, 
-                    v.parked_at && { 
-                      color: "bg-emerald-500", 
-                      icon: <MapPin className="w-3.5 h-3.5 text-white" />, 
-                      label: "Parked", 
-                      time: v.parked_at,
-                      statusOrder: 2,
-                      driver: v.parked_by, 
-                      note: [ 
-                        v.zone ? `Zone ${v.zone} Â· Slot ${v.slot}` : null, 
-                      ].filter(Boolean).join(" Â· "), 
-                      photos: v.photos?.filter(p => p.type === "parked"), 
-                    }, 
-                    // Retrieval steps: shown when car has progressed past PARKED
-                    (["RETRIEVAL_REQUESTED","BEING_FETCHED","DELIVERED"].includes(v.status)) && {
-                      color: "bg-orange-400",
-                      icon: <Bell className="w-3.5 h-3.5 text-white" />,
-                      label: "Retrieval Requested",
-                      time: v.retrieval_requested_at || null,
-                      statusOrder: 3,
-                      note: "Guest scanned QR code",
-                      photos: [],
-                    },
-                    (["BEING_FETCHED","DELIVERED"].includes(v.status)) && {
-                      color: "bg-purple-500",
-                      icon: <User className="w-3.5 h-3.5 text-white" />,
-                      label: "Being Fetched",
-                      time: v.being_fetched_at || null,
-                      statusOrder: 4,
-                      driver: v.retrieved_by,
-                      photos: [],
-                    },
-                    ...(incidentsMap[v.car_id] || []).map(inc => ({
-                      color: "bg-red-500",
-                      icon: <AlertTriangle className="w-3.5 h-3.5 text-white" />,
-                      label: "Incident Reported",
-                      time: inc.created_at,
-                      driver: inc.driver_name,
-                      note: inc.description,
-                      photos: inc.photo_url
-                        ? [{ url: inc.photo_url, type: "incident" }]
-                        : [],
-                      isIncident: true,
-                    })),
-                    ...(v.assignments || []).map(a => ({
-                      color: a.action === "reassigned" ? "bg-amber-500" : "bg-indigo-500",
-                      icon: <UserCog className="w-3.5 h-3.5 text-white" />,
-                      label: a.action === "reassigned"
-                        ? `Reassigned to ${a.driver_name || "â€”"}`
-                        : a.action === "retrieval_assigned"
-                          ? `Retrieval assigned to ${a.driver_name || "â€”"}`
-                          : `Assigned to ${a.driver_name || "â€”"}`,
-                      time: a.created_at,
-                      driver: a.performed_by ? a.performed_by.name : "Self-assigned",
-                      note: a.performed_by
-                        ? `By ${a.performed_by.role}${a.previous_driver_id ? " Â· override" : ""}`
-                        : null,
-                      photos: [],
-                    })),
-                    v.delivered_at && {
-                      color: "bg-teal-500",
-                      icon: <Clock className="w-3.5 h-3.5 text-white" />,
-                      label: "Delivered",
-                      time: v.delivered_at,
-                      statusOrder: 5,
-                      driver: v.retrieved_by,
-                      photos: v.delivery_photo_url ? [{ url: v.delivery_photo_url, type: "delivery", label: "Delivered" }] : [],
-                    },
-                  ]
-                    .filter(Boolean)
-                    .sort((a, b) => {
-                      const ta = a.time ? new Date(a.time).getTime() : null;
-                      const tb = b.time ? new Date(b.time).getTime() : null;
-                      if (ta !== null && tb !== null) return ta - tb;
-                      const oa = a.statusOrder ?? 99;
-                      const ob = b.statusOrder ?? 99;
-                      if (oa !== ob) return oa - ob;
-                      if (ta !== null) return -1;
-                      if (tb !== null) return 1;
-                      return 0;
-                    }) 
-                    .map((step, si, arr) => ( 
-                      <div key={si} className={`flex-1 flex flex-col items-center sm:items-start min-w-[140px] relative`}> 
-                        {/* Circle + Line */}
-                        <div className="flex items-center w-full">
-                          <div className={`w-8 h-8 rounded-full ${step.color} 
-                            flex items-center justify-center shrink-0 z-10 mx-auto sm:mx-0 shadow-sm`}> 
-                            {step.icon} 
-                          </div> 
-                          {si < arr.length - 1 && (
-                            <div className="hidden sm:block flex-1 h-0.5 bg-gray-200 mx-2" />
-                          )}
-                          {si < arr.length - 1 && (
-                            <div className="sm:hidden absolute left-4 top-8 w-0.5 h-6 bg-gray-200 -z-10" />
-                          )}
-                        </div>
+                  <VisitTimelineFetcher carId={v.car_id} setLightbox={setLightbox} />
 
-                        {/* Content */}
-                        <div className="mt-3 text-center sm:text-left sm:pr-4 w-full">
-                          <div className={`font-bold text-xs ${step.isIncident ? "text-red-600" : "text-[#0F2044]"}`}>
-                            {step.label}
-                          </div>
-                          <div className="text-[10px] text-gray-400 font-mono mt-0.5">
-                            {step.time ? fmtDateTime(step.time) : "â€”"}
-                          </div>
-
-                          {step.driver && step.driver !== "â€”" && ( 
-                            <div className="flex items-center justify-center sm:justify-start gap-1 mt-1"> 
-                              <User className="w-2.5 h-2.5 text-gray-400" /> 
-                              <span className="text-[10px] text-gray-500 font-semibold">{step.driver}</span> 
-                            </div> 
-                          )} 
-
-                          {step.note && ( 
-                            <div className={`mt-2 text-[10px] rounded-lg px-2 py-1.5 border-l-2 ${
-                              step.isIncident 
-                                ? "bg-red-50 border-red-400 text-red-700" 
-                                : "bg-amber-50 border-amber-300 text-amber-800" 
-                            } italic line-clamp-2`}> 
-                              "{step.note}" 
-                            </div> 
-                          )} 
-
-                          {step.photos && step.photos.length > 0 && ( 
-                            <div className="flex justify-center sm:justify-start gap-1.5 mt-2 flex-wrap"> 
-                              {step.photos.map((p, pi) => ( 
-                                <div key={pi} className="flex flex-col items-center gap-1">
-                                  <img 
-                                    src={p.url} 
-                                    alt={p.type} 
-                                    onClick={() => setLightbox(p.url)}
-                                    className="w-10 h-10 object-cover rounded-lg border border-gray-200 hover:scale-105 transition-transform cursor-pointer" 
-                                  /> 
-                                  {p.label && (
-                                    <span className="text-[9px] text-gray-500 font-medium capitalize">
-                                      {p.label}
-                                    </span>
-                                  )}
-                                </div>
-                              ))} 
-                            </div> 
-                          )}
-                        </div>
-                      </div> 
-                    ))} 
-                  </div>
-                </div> 
-              
-                {v.rating && (
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <Star className="w-4 h-4 fill-amber-400 
-                        text-amber-400" />
-                      <span className="text-sm font-bold text-amber-600">
-                        {v.rating}/5 Guest Rating
-                      </span>
-                    </div>
-                    {v.rating_comment && (
-                      <div className="mt-2 bg-amber-50 border-l-2 
-                        border-amber-400 rounded-r-xl px-3 py-2">
-                        <p className="text-xs text-amber-800 italic">
-                          "{v.rating_comment}"
-                        </p>
+                  {v.rating_platform && (
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                        <span className="text-sm font-bold text-amber-600">
+                          {v.rating_platform}/5 Guest Rating
+                        </span>
                       </div>
-                    )}
-                  </div>
-                )}
-              
-                  {(!v.check_in_time && !v.parked_at && !v.delivered_at) && ( 
-                    <div className="text-xs text-gray-400 flex items-center 
-                      gap-1"> 
-                      <Camera className="w-3.5 h-3.5" /> 
-                      No timeline data available 
-                    </div> 
-                  )} 
+                      {v.rating_comment && (
+                        <div className="mt-2 bg-amber-50 border-l-2 border-amber-400 rounded-r-xl px-3 py-2">
+                          <p className="text-xs text-amber-800 italic">
+                            "{v.rating_comment}"
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div> 
               )} 
             </div>
@@ -769,4 +614,4 @@ export default function CarDetail() {
     </OwnerLayout> 
   ); 
 }
-
+

@@ -13,6 +13,7 @@ const StatusBadge = ({ status }) => {
     "CHECKED_IN": "bg-blue-100 text-blue-700",
     "PARKED": "bg-amber-100 text-amber-700",
     "RETRIEVAL_REQUESTED": "bg-orange-100 text-orange-700",
+    "ACCEPTED": "bg-yellow-100 text-yellow-700",
     "BEING_FETCHED": "bg-purple-100 text-purple-700",
     "DELIVERED": "bg-emerald-100 text-emerald-700"
   };

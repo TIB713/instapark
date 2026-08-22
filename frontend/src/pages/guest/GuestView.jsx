@@ -40,43 +40,20 @@ export default function GuestView() {
   const [displayEtaMinutes, setDisplayEtaMinutes] = useState(null);
   const [etaArrivingSoon, setEtaArrivingSoon] = useState(false);
 
-  const [plateVerified, setPlateVerified] = useState(false);
-  const [plateInput, setPlateInput] = useState("");
-  const [plateError, setPlateError] = useState("");
-  const [plateLocked, setPlateLocked] = useState(false);
-  const [verifyingPlate, setVerifyingPlate] = useState(false);
-  const [plateCheckDone, setPlateCheckDone] = useState(false);
-
   useEffect(() => {
-    const cachedVerified = sessionStorage.getItem(`plate_verified_${token}`);
-    const cachedCar = sessionStorage.getItem(`guest_car_${token}`);
-    if (cachedVerified === "1" && cachedCar) {
-      try {
-        const parsedCar = JSON.parse(cachedCar);
-        setCar(parsedCar);
-        setPlateVerified(true);
-        if (!window.location.pathname.startsWith('/r/') && parsedCar.retrieval_token) {
-          setTimeout(() => {
-            window.history.replaceState(null, '', `/r/${parsedCar.retrieval_token}`);
-          }, 50);
+    publicApi.get(`/qr/${token}`)
+      .then(({ data }) => {
+        setCar(data);
+        if (!window.location.pathname.startsWith('/r/') && data.retrieval_token) {
+          window.history.replaceState(null, '', `/r/${data.retrieval_token}`);
         }
-
-        if (parsedCar.retrieval_token) {
-          publicApi.get(`/retrieval/${parsedCar.retrieval_token}`)
-            .then(({ data }) => {
-              setCar(data);
-              sessionStorage.setItem(`guest_car_${token}`, JSON.stringify(data));
-            })
-            .catch(() => {});
-        }
-      } catch { }
-    }
-    setPlateCheckDone(true);
-    setLoading(false);
+      })
+      .catch(() => setInvalid(true))
+      .finally(() => setLoading(false));
   }, [token]);
 
   useEffect(() => {
-    if (!car?.id || !plateVerified) return;
+    if (!car?.id) return;
     let ws, retryCount = 0, retryTimer;
     const connect = () => {
       const retrievalToken = car?.retrieval_token;
@@ -109,7 +86,7 @@ export default function GuestView() {
   }, [car?.id, car?.retrieval_token, token]);
 
   useEffect(() => {
-    if (!car?.id || !plateVerified) return;
+    if (!car?.id) return;
     if (
       car?.status === "RETRIEVAL_REQUESTED" ||
       car?.status === "BEING_FETCHED"
@@ -123,7 +100,7 @@ export default function GuestView() {
   }, [car?.status]);
 
   useEffect(() => {
-    if (!car?.id || !plateVerified) return;
+    if (!car?.id) return;
     if (car?.status !== "ARRIVED_AT_GATE") {
       setDeliveryOtp(null);
       setSecondsLeft(null);
@@ -191,34 +168,6 @@ export default function GuestView() {
     return () => clearInterval(interval);
   }, [etaAnchor]);
 
-  const verifyPlate = async () => {
-    if (!plateInput.trim()) return;
-    setVerifyingPlate(true);
-    setPlateError("");
-    try {
-      const { data } = await publicApi.post(`/guest-access/${token}/verify-plate`, { plate: plateInput });
-      if (data.verified && data.car) {
-        setCar(data.car);
-        setPlateVerified(true);
-        sessionStorage.setItem(`plate_verified_${token}`, "1");
-        sessionStorage.setItem(`guest_car_${token}`, JSON.stringify(data.car));
-        const isRetrieval = window.location.pathname.startsWith('/r/');
-        if (!isRetrieval && data.car.retrieval_token) {
-          setTimeout(() => {
-            window.history.replaceState(null, '', `/r/${data.car.retrieval_token}`);
-          }, 50);
-        }
-      }
-    } catch (err) {
-      if (err.response?.status === 423) {
-        setPlateLocked(true);
-      } else {
-        setPlateError(err.response?.data?.detail || "Could not verify. Please try again.");
-      }
-    } finally {
-      setVerifyingPlate(false);
-    }
-  };
 
   const handleRequestRetrieval = async () => {
     if (!car) return;
@@ -323,51 +272,7 @@ export default function GuestView() {
     </div>
   );
 
-  if (plateCheckDone && !plateVerified) {
-    if (plateLocked) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-[#0F2044] to-[#1A3C6E] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center">
-            <div className="w-14 h-14 bg-red-100 rounded-full mx-auto flex items-center justify-center mb-4">
-              <span className="text-2xl">🔒</span>
-            </div>
-            <h1 className="font-bold text-xl text-gray-800 mb-2">Too Many Attempts</h1>
-            <p className="text-gray-500 text-sm">
-              This link has been locked for security. Please contact the valet desk for assistance.
-            </p>
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0F2044] to-[#1A3C6E] flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden p-6 text-center">
-          <div className="w-14 h-14 bg-[#1A3C6E]/10 rounded-full mx-auto flex items-center justify-center mb-4">
-            <Car className="w-7 h-7 text-[#1A3C6E]" />
-          </div>
-          <h1 className="font-bold text-lg text-gray-800 mb-1">Verify Your Vehicle</h1>
-          <p className="text-gray-400 text-xs mb-5">Enter your registration number to continue</p>
-          <input
-            type="text"
-            value={plateInput}
-            onChange={e => { setPlateInput(e.target.value.toUpperCase()); setPlateError(""); }}
-            placeholder="e.g. GJ01AB1234"
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center font-mono font-bold text-lg tracking-wider text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] uppercase"
-            maxLength={15}
-            onKeyDown={e => { if (e.key === "Enter") verifyPlate(); }}
-          />
-          {plateError && <p className="text-red-500 text-xs mt-2 font-semibold">{plateError}</p>}
-          <button
-            onClick={verifyPlate}
-            disabled={!plateInput.trim() || verifyingPlate}
-            className="w-full mt-4 btn-primary-navy rounded-xl py-3 text-sm font-bold disabled:opacity-50"
-          >
-            {verifyingPlate ? "Verifying…" : "Continue"}
-          </button>
-        </div>
-      </div>
-    );
-  }
+
 
   if (invalid || !car) return (
     <div className="guest-bg flex items-center justify-center px-4">
@@ -523,13 +428,15 @@ export default function GuestView() {
         )}
 
         {/* Screen 3: RETRIEVAL_REQUESTED or BEING_FETCHED */}
-        {(status === "RETRIEVAL_REQUESTED" || status === "BEING_FETCHED") && (
+        {(status === "RETRIEVAL_REQUESTED" || status === "ACCEPTED" || status === "BEING_FETCHED") && (
           <div
             className="bg-white rounded-3xl shadow-2xl overflow-hidden fade-in-up"
             data-testid="state-retrieval"
           >
             <div className={`p-6 text-center text-white ${status === "BEING_FETCHED"
               ? "bg-gradient-to-br from-[#1A3C6E] to-[#0F2044]"
+              : status === "ACCEPTED" 
+              ? "bg-gradient-to-br from-[#2563EB] to-[#1E40AF]"
               : "bg-gradient-to-br from-amber-500 to-amber-600"
               }`}>
               <div className="w-16 h-16 bg-white/20 rounded-full mx-auto
@@ -539,6 +446,8 @@ export default function GuestView() {
               <h2 className="font-heading text-xl font-bold mt-4">
                 {status === "BEING_FETCHED"
                   ? "Your car is on the way 🚗"
+                  : status === "ACCEPTED"
+                  ? "A driver has accepted your request"
                   : "Request received!"}
               </h2>
               {status === "RETRIEVAL_REQUESTED" ? (
@@ -546,6 +455,8 @@ export default function GuestView() {
                   <p className="text-white/90 text-sm mt-2">✅ Request received! A driver will accept it shortly.</p>
                   {queuePosition && <p className="text-white/80 text-sm mt-1">Queue position: {queuePosition.position}</p>}
                 </>
+              ) : status === "ACCEPTED" ? (
+                <p className="text-white/90 text-sm mt-2">🔑 Getting your keys now!</p>
               ) : (
                 <p className="text-white/90 text-sm mt-2">🚗 Your car is being fetched right now!</p>
               )}
@@ -579,7 +490,7 @@ export default function GuestView() {
                     </>
                   )}
                 </div>
-              ) : status === "RETRIEVAL_REQUESTED" ? (
+              ) : (status === "RETRIEVAL_REQUESTED" || status === "ACCEPTED") ? (
                 <div className="bg-amber-50 border border-amber-100
                   rounded-2xl p-4 text-center mb-4">
                   <p className="text-lg font-extrabold text-[#0F2044]">
@@ -620,7 +531,7 @@ export default function GuestView() {
                 </div>
               )}
 
-              {status === "RETRIEVAL_REQUESTED" && (
+              {(status === "RETRIEVAL_REQUESTED" || status === "ACCEPTED") && (
                 <button
                   onClick={handleCancelRetrieval}
                   disabled={cancelling}
@@ -632,39 +543,53 @@ export default function GuestView() {
 
               <div className="relative mt-2">
                 <div className="flex justify-between items-center relative z-10">
-                  <div className="flex flex-col items-center w-1/3">
+                  <div className="flex flex-col items-center w-1/4">
                     <div className="w-10 h-10 rounded-full bg-[#1A3C6E]
                       text-white flex items-center justify-center
                       font-bold text-sm">✓</div>
                     <span className="text-xs font-semibold text-[#0F2044]
                       mt-2 text-center">Requested</span>
                   </div>
-                  <div className="flex flex-col items-center w-1/3">
+                  <div className="flex flex-col items-center w-1/4">
+                    <div className={`w-10 h-10 rounded-full flex items-center
+                      justify-center font-bold text-sm ${status === "ACCEPTED" || status === "BEING_FETCHED"
+                        ? "bg-[#1A3C6E] text-white"
+                        : "bg-gray-100 text-gray-400"
+                      }`}>
+                      {status === "ACCEPTED" || status === "BEING_FETCHED" ? "✓" : "2"}
+                    </div>
+                    <span className={`text-xs font-semibold mt-2 text-center
+                      ${status === "ACCEPTED" || status === "BEING_FETCHED"
+                        ? "text-[#0F2044]" : "text-gray-400"}`}>
+                      Accepted
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center w-1/4">
                     <div className={`w-10 h-10 rounded-full flex items-center
                       justify-center font-bold text-sm ${status === "BEING_FETCHED"
                         ? "bg-[#1A3C6E] text-white"
                         : "bg-gray-100 text-gray-400"
                       }`}>
-                      {status === "BEING_FETCHED" ? "🚗" : "2"}
+                      {status === "BEING_FETCHED" ? "🚗" : "3"}
                     </div>
                     <span className={`text-xs font-semibold mt-2 text-center
                       ${status === "BEING_FETCHED"
                         ? "text-[#0F2044]" : "text-gray-400"}`}>
-                      Fetching
+                      Picked Up
                     </span>
                   </div>
-                  <div className="flex flex-col items-center w-1/3">
+                  <div className="flex flex-col items-center w-1/4">
                     <div className="w-10 h-10 rounded-full bg-gray-100
                       text-gray-400 flex items-center justify-center
-                      font-bold text-sm">3</div>
+                      font-bold text-sm">4</div>
                     <span className="text-xs font-semibold text-gray-400
                       mt-2 text-center">Delivered</span>
                   </div>
                 </div>
-                <div className="absolute top-5 left-[17%] right-[17%]
+                <div className="absolute top-5 left-[12.5%] right-[12.5%]
                   h-1 bg-gray-100 rounded-full">
                   <div className={`h-full bg-[#1A3C6E] rounded-full
-                    transition-all duration-700 ${status === "BEING_FETCHED" ? "w-1/2" : "w-0"
+                    transition-all duration-700 ${status === "BEING_FETCHED" ? "w-2/3" : status === "ACCEPTED" ? "w-1/3" : "w-0"
                     }`} />
                 </div>
               </div>

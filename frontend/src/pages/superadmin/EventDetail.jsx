@@ -2000,7 +2000,7 @@ export default function EventDetail() {
                           </span>
                           {openDropdown === 'carStatus' && (
                             <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg p-1 min-w-[160px] font-normal normal-case text-left">
-                              {["all", "CHECKED_IN", "PARKED", "RETRIEVAL_REQUESTED", "BEING_FETCHED", "DELIVERED"].map(opt => (
+                              {["all", "CHECKED_IN", "PARKED", "RETRIEVAL_REQUESTED", "ACCEPTED", "BEING_FETCHED", "DELIVERED"].map(opt => (
                                 <div key={opt} onClick={() => { setCarStatusFilter(opt); setOpenDropdown(null); }} className="px-3 py-2 text-sm rounded-lg cursor-pointer hover:bg-gray-50 flex items-center gap-2 capitalize">
                                   {carStatusFilter === opt ? <div className="w-2 h-2 rounded-full bg-[#1A3C6E]" /> : <div className="w-2 h-2" />}
                                   {opt}
@@ -2129,7 +2129,7 @@ export default function EventDetail() {
                           </td>
                           <td className="px-6 py-4 text-gray-600">
                             {(() => {
-                              if (c.status === "RETRIEVAL_REQUESTED" || c.status === "BEING_FETCHED") {
+                              if (c.status === "RETRIEVAL_REQUESTED" || c.status === "ACCEPTED" || c.status === "BEING_FETCHED") {
                                 return c.retrieval_driver_name || c.parked_driver_name || "—";
                               } else if (c.status === "PARKED") {
                                 return c.parked_driver_name || "—";

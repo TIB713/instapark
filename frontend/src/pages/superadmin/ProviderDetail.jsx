@@ -1995,7 +1995,7 @@ export default function ProviderDetail() {
                               </td>
                               <td className="px-6 py-4 text-gray-600">
                                 {(() => {
-                                  if (c.status === "RETRIEVAL_REQUESTED" || c.status === "BEING_FETCHED") {
+                                  if (c.status === "RETRIEVAL_REQUESTED" || c.status === "ACCEPTED" || c.status === "BEING_FETCHED") {
                                     return c.retrieval_driver_name || c.parked_driver_name || "—";
                                   } else if (c.status === "PARKED") {
                                     return c.parked_driver_name || "—";

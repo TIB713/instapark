@@ -49,6 +49,7 @@ export default function ValetProviderHotelDetail() {
   useEffect(() => { setSupervisorsPage(1); }, [supervisorSearch]);
 
   const [eventTypeTab, setEventTypeTab] = useState("daily");
+  const [triggeringDailyJob, setTriggeringDailyJob] = useState(false);
   const [dailyFilter, setDailyFilter] = useState("active");
   const [specialFilter, setSpecialFilter] = useState("active");
   const [dailyEvents, setDailyEvents] = useState([]);
@@ -564,6 +565,20 @@ export default function ValetProviderHotelDetail() {
   const paginatedDrivers = filteredDrivers.slice((driversPage - 1) * 10, driversPage * 10);
   const paginatedSupervisors = filteredSupervisors.slice((supervisorsPage - 1) * 10, supervisorsPage * 10);
 
+
+  const handleTriggerDailyEvent = async () => {
+    if (!window.confirm(`Run the daily event job for ${hotel?.name}? This creates today's event if missing and carries forward any stuck cars from yesterday.`)) return;
+    setTriggeringDailyJob(true);
+    try {
+      await api.post(`/superadmin/hotels/${hid}/trigger-daily-event`);
+      toast.success("Daily event processed for this hotel");
+      fetchEvents("hotel_daily", dailyFilter, dailyPage);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Failed to run daily event job");
+    } finally {
+      setTriggeringDailyJob(false);
+    }
+  };
 
   const fetchEvents = async (type, status, page) => {
     setLoadingEvents(true);
@@ -1335,6 +1350,15 @@ export default function ValetProviderHotelDetail() {
                     <Plus className="w-3.5 h-3.5" /> Create Special Event
                   </button>
                 )}
+                {eventTypeTab === "daily" && (
+                  <button
+                    onClick={handleTriggerDailyEvent}
+                    disabled={triggeringDailyJob}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[#0F2044] text-white text-xs font-bold rounded-xl hover:bg-[#1a3660] transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Radio className="w-3.5 h-3.5" /> {triggeringDailyJob ? "Running…" : "Run Daily Event"}
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center justify-between">
@@ -1594,7 +1618,7 @@ export default function ValetProviderHotelDetail() {
                               </td>
                               <td className="px-6 py-4 text-gray-600">
                                 {(() => {
-                                  if (c.status === "RETRIEVAL_REQUESTED" || c.status === "BEING_FETCHED") {
+                                  if (c.status === "RETRIEVAL_REQUESTED" || c.status === "ACCEPTED" || c.status === "BEING_FETCHED") {
                                     return c.retrieval_driver_name || c.parked_driver_name || "—";
                                   } else if (c.status === "PARKED") {
                                     return c.parked_driver_name || "—";

@@ -34,6 +34,12 @@ const CONFIG = {
     pulse: true,
     spin: false,
   },
+  ACCEPTED: {
+    className: "bg-yellow-100 text-yellow-700",
+    Icon: Car,
+    pulse: false,
+    spin: false,
+  },
   BEING_FETCHED: {
     className: "bg-orange-100 text-orange-700",
     Icon: Loader2,

@@ -54,8 +54,18 @@ module.exports = {
   				'5': 'hsl(var(--chart-5))',
   				ownerGold: 'var(--owner-gold)',
   				ownerGoldTint: 'var(--owner-gold-tint)'
-  			}
+  			},
+            brand: {
+                purple: '#3F0163',
+                gold: '#FCBF00',
+                cream: '#FAF7F2',
+                dark: '#1A1025'
+            }
   		},
+        fontFamily: {
+            heading: ['Poppins', 'sans-serif'],
+            body: ['Inter', 'sans-serif'],
+        },
   		keyframes: {
   			'accordion-down': {
   				from: {

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Poppins:wght@700;800&family=Inter:wght@500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,11 +6,11 @@
 
 body {
     margin: 0;
-    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', 'Manrope', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #F9FAFB;
-    color: #0A0A0A;
+    background-color: #FAF7F2;
+    color: #1A1025;
 }
 
 h1, h2, h3, h4, h5, h6, .font-heading {
