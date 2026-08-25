@@ -3,12 +3,13 @@ import { createPortal } from "react-dom";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import SuperLayout from "@/components/layout/SuperLayout";
 import { State, City } from "country-state-city";
-import { api, API } from "@/lib/api";
+import { api, API, WS_BASE } from "@/lib/api";
 import { fmtDate, fmtDateTimeFull } from "@/lib/time";
 import { toast } from "sonner";
 import { ArrowLeft, Mail, Phone, Building2, Plus, X, Download, Edit2, Trash2, Eye, CheckCircle, Check, XCircle, Shield, Camera, CreditCard, Calendar, MapPin, Search, Users, Car, Star, ChevronDown, AlertTriangle, BuildingIcon, Radio, QrCode, Share2 } from "lucide-react";
 import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
 import StatusBadge from "@/components/ui/StatusBadge";
+import { Pagination } from "../../components/ui/Pagination";
 import { QRCodeSVG } from "qrcode.react";
 import QRCode from "qrcode";
 
@@ -415,8 +416,81 @@ export default function ProviderDetail() {
 
   const [eventsPage, setEventsPage] = useState(1);
 
+  const [qrCards, setQrCards] = useState([]);
+  const [loadingQrCards, setLoadingQrCards] = useState(false);
+  const [qrCardSearch, setQrCardSearch] = useState("");
   const [qrIncidentHistory, setQrIncidentHistory] = useState([]);
   const [loadingQrHistory, setLoadingQrHistory] = useState(false);
+  const [selectedIncidentCard, setSelectedIncidentCard] = useState(null);
+  const [zoomedCard, setZoomedCard] = useState(null);
+
+  const [qrPage, setQrPage] = useState(1);
+  const QR_PAGE_SIZE = 24;
+  const [qrDateFilter, setQrDateFilter] = useState("all");
+
+  useEffect(() => {
+    setQrPage(1);
+  }, [qrCardSearch, qrDateFilter, activeTab]);
+
+  const uniqueQrDates = useMemo(() => {
+    const dates = new Set();
+    qrCards.forEach(c => {
+      if (c.created_at) {
+        dates.add(c.created_at.substring(0, 10));
+      }
+    });
+    return Array.from(dates).sort().reverse();
+  }, [qrCards]);
+
+  const filteredQrCards = useMemo(() => {
+    let filtered = qrCards;
+    if (qrDateFilter !== "all") {
+      filtered = filtered.filter(c => c.created_at && c.created_at.substring(0, 10) === qrDateFilter);
+    }
+    return filtered;
+  }, [qrCards, qrDateFilter]);
+
+  const paginatedQrCards = filteredQrCards.slice((qrPage - 1) * QR_PAGE_SIZE, qrPage * QR_PAGE_SIZE);
+
+  const downloadCardPng = async (card) => {
+    const dataUrl = await QRCode.toDataURL(
+      `${window.location.origin}/v/${card.qr_token}`,
+      { margin: 1, width: 512 }
+    );
+    
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 620;
+    const ctx = canvas.getContext("2d");
+    
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    const img = new Image();
+    img.src = dataUrl;
+    await new Promise((resolve) => {
+      img.onload = resolve;
+    });
+    ctx.drawImage(img, 0, 0, 512, 512);
+    
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#000000";
+    ctx.font = "bold 32px sans-serif";
+    ctx.fillText(`#${card.key_tag_number}`, 256, 560);
+    
+    ctx.fillStyle = "#555555";
+    ctx.font = "22px sans-serif";
+    ctx.fillText(`Code ${card.card_code}`, 256, 595);
+    
+    const finalDataUrl = canvas.toDataURL("image/png");
+
+    const a = document.createElement("a");
+    a.href = finalDataUrl;
+    a.download = `qr-card-${p?.name?.replace(/\s+/g, "_") || "provider"}-tag${card.key_tag_number}-code${card.card_code}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   const [driversPage, setDriversPage] = useState(1);
   const [supervisorsPage, setSupervisorsPage] = useState(1);
@@ -704,6 +778,56 @@ export default function ProviderDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "qr_cards") {
+      const timer = setTimeout(() => {
+        setLoadingQrCards(true);
+        api.get(`/providers/${id}/qr-cards?search=${qrCardSearch}`)
+          .then(r => setQrCards(r.data?.cards || []))
+          .catch(() => toast.error("Failed to load QR cards"))
+          .finally(() => setLoadingQrCards(false));
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, qrCardSearch, id]);
+
+  useEffect(() => {
+    if (activeTab !== "qr_cards" || !id) return;
+    let ws, retryCount = 0, retryTimer;
+    const connect = () => {
+      const token = (api.defaults.headers.common.Authorization || "").replace("Bearer ", "") || localStorage.getItem("superadmin_token");
+      ws = new WebSocket(`${WS_BASE}/ws/provider/${id}?token=${token}`);
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "qr_card_update" && msg.data?.id) {
+            setQrCards(prev => prev.map(c => c.id === msg.data.id ? { ...c, ...msg.data } : c));
+          }
+        } catch {}
+      };
+      ws.onclose = () => {
+        if (retryCount >= 5) return;
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+        retryCount++;
+        retryTimer = setTimeout(connect, delay);
+      };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    const poll = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        api.get(`/providers/${id}/qr-cards?search=${qrCardSearch}`)
+          .then(r => setQrCards(r.data?.cards || []))
+          .catch(() => {});
+      }
+    }, 15000);
+    return () => {
+      clearTimeout(retryTimer);
+      clearInterval(poll);
+      ws?.close();
+    };
+  }, [activeTab, id, qrCardSearch]);
 
 
 
@@ -1194,6 +1318,7 @@ export default function ProviderDetail() {
             { id: "cars", label: "Cars", icon: Car },
             { id: "queue", label: "Live Queue", icon: Radio },
             { id: "incidents", label: "Incidents", icon: AlertTriangle },
+            { id: "qr_cards", label: "QR Cards", icon: QrCode },
           ].map(tab => (
             <button
               key={tab.id}
@@ -1665,20 +1790,12 @@ export default function ProviderDetail() {
                     ))}
                   </tbody>
                 </table>
-                {filteredDrivers.length > 10 && (
-                  <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-                    <span className="text-sm text-gray-400">
-                      Showing {Math.min((driversPage - 1) * 10 + 1, filteredDrivers.length)}–{Math.min(driversPage * 10, filteredDrivers.length)} of {filteredDrivers.length}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button disabled={driversPage === 1} onClick={() => setDriversPage(p => p - 1)}
-                        className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                      <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{driversPage}</span>
-                      <button disabled={driversPage * 10 >= filteredDrivers.length} onClick={() => setDriversPage(p => p + 1)}
-                        className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-                    </div>
-                  </div>
-                )}
+                <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-sm text-gray-400">
+                    Showing {Math.min((driversPage - 1) * 10 + 1, filteredDrivers.length)}–{Math.min(driversPage * 10, filteredDrivers.length)} of {filteredDrivers.length}
+                  </span>
+                  <Pagination currentPage={driversPage} totalItems={filteredDrivers.length} pageSize={10} onPageChange={setDriversPage} />
+                </div>
               </div>
             </div>
           </>
@@ -1758,20 +1875,12 @@ export default function ProviderDetail() {
                     ))}
                   </tbody>
                 </table>
-                {filteredSupervisors.length > 10 && (
-                  <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-                    <span className="text-sm text-gray-400">
-                      Showing {Math.min((supervisorsPage - 1) * 10 + 1, filteredSupervisors.length)}–{Math.min(supervisorsPage * 10, filteredSupervisors.length)} of {filteredSupervisors.length}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button disabled={supervisorsPage === 1} onClick={() => setSupervisorsPage(p => p - 1)}
-                        className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                      <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{supervisorsPage}</span>
-                      <button disabled={supervisorsPage * 10 >= filteredSupervisors.length} onClick={() => setSupervisorsPage(p => p + 1)}
-                        className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-                    </div>
-                  </div>
-                )}
+                <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-sm text-gray-400">
+                    Showing {Math.min((supervisorsPage - 1) * 10 + 1, filteredSupervisors.length)}–{Math.min(supervisorsPage * 10, filteredSupervisors.length)} of {filteredSupervisors.length}
+                  </span>
+                  <Pagination currentPage={supervisorsPage} totalItems={filteredSupervisors.length} pageSize={10} onPageChange={setSupervisorsPage} />
+                </div>
               </div>
             </div>
           </>
@@ -1852,20 +1961,12 @@ export default function ProviderDetail() {
                     )}
                   </tbody>
                 </table>
-                {filteredHotels.length > 10 && (
-                  <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-                    <span className="text-sm text-gray-400">
-                      Showing {Math.min((hotelsPage - 1) * 10 + 1, filteredHotels.length)}–{Math.min(hotelsPage * 10, filteredHotels.length)} of {filteredHotels.length}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button disabled={hotelsPage === 1} onClick={() => setHotelsPage(p => p - 1)}
-                        className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                      <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{hotelsPage}</span>
-                      <button disabled={hotelsPage * 10 >= filteredHotels.length} onClick={() => setHotelsPage(p => p + 1)}
-                        className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-                    </div>
-                  </div>
-                )}
+                <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-sm text-gray-400">
+                    Showing {Math.min((hotelsPage - 1) * 10 + 1, filteredHotels.length)}–{Math.min(hotelsPage * 10, filteredHotels.length)} of {filteredHotels.length}
+                  </span>
+                  <Pagination currentPage={hotelsPage} totalItems={filteredHotels.length} pageSize={10} onPageChange={setHotelsPage} />
+                </div>
               </div>
             </div>
           </>
@@ -1928,11 +2029,7 @@ export default function ProviderDetail() {
             {filteredCars.length > 10 && (
               <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
                 <span className="text-sm text-gray-400">Showing {Math.min((carsPage - 1) * 10 + 1, filteredCars.length)}–{Math.min(carsPage * 10, filteredCars.length)} of {filteredCars.length}</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button disabled={carsPage === 1} onClick={() => setCarsPage(p => p - 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                  <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{carsPage}</span>
-                  <button disabled={carsPage * 10 >= filteredCars.length} onClick={() => setCarsPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-                </div>
+                <Pagination currentPage={carsPage} totalItems={filteredCars.length} pageSize={10} onPageChange={setCarsPage} />
               </div>
             )}
           </div>
@@ -2087,19 +2184,326 @@ export default function ProviderDetail() {
             {filteredIncidents.length > 10 && (
               <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
                 <span className="text-sm text-gray-400">Showing {Math.min((incidentsPage - 1) * 10 + 1, filteredIncidents.length)}–{Math.min(incidentsPage * 10, filteredIncidents.length)} of {filteredIncidents.length}</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button disabled={incidentsPage === 1} onClick={() => setIncidentsPage(p => p - 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                  <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{incidentsPage}</span>
-                  <button disabled={incidentsPage * 10 >= filteredIncidents.length} onClick={() => setIncidentsPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-                </div>
+                <Pagination currentPage={incidentsPage} totalItems={filteredIncidents.length} pageSize={10} onPageChange={setIncidentsPage} />
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === "qr_cards" && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
+              <div>
+                <h2 className="font-heading text-lg font-semibold text-[#0F2044]">QR Card Pool</h2>
+                <p className="text-sm text-gray-500">
+                  {qrDateFilter !== "all" 
+                    ? `${filteredQrCards.length} of ${qrCards.length} cards shown (of ${p.max_cars || 0} total)`
+                    : `${qrCards.length} / ${p.max_cars || 0} cards generated`}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+                <select
+                  value={qrDateFilter}
+                  onChange={(e) => setQrDateFilter(e.target.value)}
+                  className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]"
+                >
+                  <option value="all">All Dates</option>
+                  {uniqueQrDates.map(d => (
+                    <option key={d} value={d}>{fmtDate(d)}</option>
+                  ))}
+                </select>
+                <div className="relative flex-1 sm:flex-none">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={qrCardSearch}
+                    onChange={(e) => setQrCardSearch(e.target.value)}
+                    placeholder="Search by key tag..."
+                    className="w-full sm:w-64 pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    if (filteredQrCards.length === 0) return toast.error("No cards to download");
+                    toast.loading(`Downloading ${filteredQrCards.length} QR cards...`, { id: "bulk-dl" });
+                    for (const card of filteredQrCards) {
+                      await downloadCardPng(card);
+                      await new Promise(r => setTimeout(r, 150));
+                    }
+                    toast.success("Done", { id: "bulk-dl" });
+                  }}
+                  className="px-4 py-2 bg-white border border-gray-200 text-[#0F2044] rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                >
+                  <Download className="w-4 h-4" /> Download All (PNG)
+                </button>
+                <button
+                  onClick={async () => {
+                    if (filteredQrCards.length === 0) return toast.error("No cards to print");
+                    toast.loading("Preparing print view...", { id: "print-all" });
+                    try {
+                      const FRONTEND_URL = window.location.origin;
+                      const cardsHtml = await Promise.all(filteredQrCards.map(async c => {
+                        const url = await QRCode.toDataURL(`${FRONTEND_URL}/v/${c.qr_token}`, { margin: 1 });
+                        return `
+                          <div class="card">
+                            <img src="${url}" />
+                            <div class="tag">#${c.key_tag_number}</div>
+                            <div class="code">Code ${c.card_code}</div>
+                          </div>
+                        `;
+                      }));
+                      const fullHtml = `
+                        <html>
+                          <head>
+                            <title>Print QR Cards - ${p.name}</title>
+                            <style>
+                              body { font-family: sans-serif; padding: 20px; }
+                              .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+                              .card { border: 1px solid #ccc; padding: 15px; text-align: center; border-radius: 8px; page-break-inside: avoid; }
+                              img { max-width: 150px; height: auto; }
+                              .tag { font-size: 24px; font-weight: bold; margin-top: 10px; }
+                              .code { font-size: 16px; color: #555; margin-top: 2px; }
+                            </style>
+                          </head>
+                          <body>
+                            <h2>QR Cards for ${p.name}</h2>
+                            <div class="grid">${cardsHtml.join('')}</div>
+                            <script>window.onload = () => window.print();</script>
+                          </body>
+                        </html>
+                      `;
+                      const w = window.open("", "_blank");
+                      if (!w) {
+                        toast.error("Popup blocked — please allow popups for this site and try again.", { id: "print-all" });
+                        return;
+                      }
+                      w.document.write(fullHtml);
+                      w.document.close();
+                      toast.success("Done", { id: "print-all" });
+                    } catch (err) {
+                      toast.error("Failed to generate print view", { id: "print-all" });
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#0F2044] text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-[#1A3C6E] transition-colors"
+                >
+                  <Download className="w-4 h-4" /> Print All
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6 flex-1 overflow-y-auto">
+              {loadingQrCards ? (
+                <div className="flex items-center justify-center h-40">
+                  <div className="w-8 h-8 border-4 border-[#0F2044]/20 border-t-[#0F2044] rounded-full animate-spin"></div>
+                </div>
+              ) : qrCards.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 text-gray-500">
+                  <QrCode className="w-12 h-12 mb-2 text-gray-300" />
+                  <p>No QR cards found in the pool.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                    {paginatedQrCards.map(card => {
+                      const statusColors = {
+                        empty: { bg: "bg-green-500", text: "CHECKED IN" },
+                        occupied: { bg: "bg-blue-500", text: "PARKED" },
+                        pending_incident: { bg: "bg-amber-500", text: "PENDING" },
+                        blocked: { bg: "bg-gray-500", text: "BLOCKED" }
+                      };
+                      const sc = statusColors[card.status] || { bg: "bg-gray-500", text: card.status };
+                      
+                      return (
+                        <div key={card.id} className={`relative border rounded-xl p-3 flex flex-col items-center shadow-sm ${card.status === "blocked" ? "bg-gray-50 border-gray-200 opacity-60" : "bg-white border-gray-100"}`}>
+                          <button
+                            onClick={() => downloadCardPng(card)}
+                            className="absolute top-2 right-2 p-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors"
+                            title="Download PNG"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          <div 
+                            className="mb-4 mt-2 cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => setZoomedCard(card)}
+                          >
+                            {card.status === "occupied" ? (
+                              <div className="relative">
+                                <div className="grayscale opacity-40">
+                                  <QRCodeSVG value={`${window.location.origin}/v/${card.qr_token}`} size={84} />
+                                </div>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                  <span className="text-xs font-bold text-gray-700 bg-white/80 px-2 py-0.5 rounded">
+                                    Assigned
+                                  </span>
+                                  {card.assigned_car_plate && (
+                                    <span className="text-[10px] font-semibold text-gray-800 bg-white/80 px-1 py-0.5 rounded mt-1 w-[80px] whitespace-normal text-center leading-tight">
+                                      {card.assigned_car_plate}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <QRCodeSVG value={`${window.location.origin}/v/${card.qr_token}`} size={84} />
+                            )}
+                          </div>
+                          <div className="text-xl font-bold font-heading text-[#0F2044] mb-2">
+                            #{card.key_tag_number} <span className="text-gray-400 font-normal px-1">·</span> Code {card.card_code}
+                          </div>
+                          <div className="flex flex-col items-center gap-2">
+                            {card.status !== "occupied" && card.status !== "empty" && (
+                              <span className={`px-2 py-1 text-[10px] sm:text-xs font-bold text-white rounded-full ${sc.bg}`}>
+                                {sc.text}
+                              </span>
+                            )}
+                            {(card.status === "pending_incident" || card.status === "blocked") && (
+                              <button
+                                onClick={() => {
+                                  setSelectedIncidentCard(card);
+                                  setLoadingQrHistory(true);
+                                  api.get(`/qr-card-incidents?provider_id=${id}&key_tag_number=${card.key_tag_number}`)
+                                    .then(r => setQrIncidentHistory(r.data))
+                                    .catch(() => toast.error("Failed to load history"))
+                                    .finally(() => setLoadingQrHistory(false));
+                                }}
+                                className="text-xs font-bold text-[#F59E0B] hover:underline mt-1"
+                              >
+                                View Incident
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {filteredQrCards.length > QR_PAGE_SIZE && (
+                    <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between shrink-0 bg-white">
+                      <span className="text-sm text-gray-500">
+                        Showing {(qrPage - 1) * QR_PAGE_SIZE + 1}–{Math.min(qrPage * QR_PAGE_SIZE, filteredQrCards.length)} of {filteredQrCards.length}
+                      </span>
+                      <Pagination currentPage={qrPage} totalItems={filteredQrCards.length} pageSize={QR_PAGE_SIZE} onPageChange={setQrPage} />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
 
       </div>
 
       {/* MODALS */}
+      {zoomedCard && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setZoomedCard(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center animate-in fade-in zoom-in duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-end w-full mb-2">
+              <button onClick={() => setZoomedCard(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            {zoomedCard.status === "occupied" ? (
+              <div className="relative">
+                <div className="grayscale opacity-40">
+                  <QRCodeSVG value={`${window.location.origin}/v/${zoomedCard.qr_token}`} size={320} />
+                </div>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-xl font-bold text-gray-700 bg-white/90 px-4 py-2 rounded-lg shadow-sm">
+                    Assigned
+                  </span>
+                  {zoomedCard.assigned_car_plate && (
+                    <span className="text-lg font-semibold text-gray-800 bg-white/90 px-4 py-2 rounded-lg mt-3 w-[280px] whitespace-normal text-center leading-tight shadow-sm">
+                      {zoomedCard.assigned_car_plate}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <QRCodeSVG value={`${window.location.origin}/v/${zoomedCard.qr_token}`} size={320} />
+            )}
+            <div className="text-4xl font-bold font-heading text-[#0F2044] mt-6">
+              #{zoomedCard.key_tag_number} <span className="text-gray-400 font-normal px-2">·</span> Code {zoomedCard.card_code}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedIncidentCard && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col animate-in fade-in zoom-in duration-200 mb-8">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044]">Incident History - #{selectedIncidentCard.key_tag_number}</h3>
+              <button onClick={() => setSelectedIncidentCard(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              {loadingQrHistory ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-[#0F2044]/20 border-t-[#0F2044] rounded-full animate-spin"></div>
+                </div>
+              ) : qrIncidentHistory.length === 0 ? (
+                <p className="text-center text-gray-500 py-4">No incident history found.</p>
+              ) : (
+                <div className="space-y-4">
+                  {qrIncidentHistory.map(inc => (
+                    <div key={inc.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div>
+                          <p className="font-bold text-sm text-[#0F2044]">{inc.reason.replace(/_/g, " ").toUpperCase()}</p>
+                          <p className="text-xs text-gray-500">Reported by {inc.reported_by_name} ({inc.reported_by_role}) on {fmtDate(inc.reported_at)}</p>
+                        </div>
+                        <span className={`px-2 py-1 text-xs font-bold rounded-full ${inc.status === "pending" ? "bg-amber-100 text-amber-700" : inc.status === "approved" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700"}`}>
+                          {inc.status.toUpperCase()}
+                        </span>
+                      </div>
+                      {inc.note && <p className="text-sm text-gray-600 bg-white p-3 rounded-lg border border-gray-100 mt-2">"{inc.note}"</p>}
+                      
+                      {inc.status === "pending" && (
+                        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-200">
+                          <button
+                            onClick={() => {
+                              api.post(`/qr-card-incidents/${inc.id}/approve`)
+                                .then(() => {
+                                  toast.success("Incident approved. New card generated.");
+                                  setSelectedIncidentCard(null);
+                                  api.get(`/providers/${id}/qr-cards?search=${qrCardSearch}`).then(r => setQrCards(r.data.cards || []));
+                                })
+                                .catch(() => toast.error("Failed to approve"));
+                            }}
+                            className="px-4 py-2 bg-green-500 text-white font-bold text-sm rounded-lg hover:bg-green-600 transition-colors"
+                          >
+                            Approve (Block & Replace)
+                          </button>
+                          <button
+                            onClick={() => {
+                              api.post(`/qr-card-incidents/${inc.id}/reject`)
+                                .then(() => {
+                                  toast.success("Incident rejected. Card restored.");
+                                  setSelectedIncidentCard(null);
+                                  api.get(`/providers/${id}/qr-cards?search=${qrCardSearch}`).then(r => setQrCards(r.data.cards || []));
+                                })
+                                .catch(() => toast.error("Failed to reject"));
+                            }}
+                            className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-bold text-sm rounded-lg hover:bg-gray-50 transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showModal && (
         <div id="modal-create-event" className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/50 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col animate-in fade-in zoom-in duration-200 mb-8">

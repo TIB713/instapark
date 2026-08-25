@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo , useRef} from 'react';
 import { Link, useParams, useNavigate } from "react-router-dom";
 import SuperLayout from "@/components/layout/SuperLayout";
+import StatusBadge from "@/components/ui/StatusBadge";
+import { Pagination } from "../../components/ui/Pagination";
 import { api, decodeJwt } from "@/lib/api";
 import { fmtDateTimeFull, fmtDate } from "@/lib/time";
 import { toast } from "sonner";
@@ -752,19 +754,13 @@ export default function SupervisorDetail() {
             </tbody>
           </table>
           {filteredEvents.length > 10 && (
-            <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-              <span className="text-sm text-gray-400">
-                Showing {Math.min((eventsPage - 1) * 10 + 1, filteredEvents.length)}–{Math.min(eventsPage * 10, filteredEvents.length)} of {filteredEvents.length}
-              </span>
-              <div className="flex items-center gap-2">
-                <button disabled={eventsPage === 1} onClick={() => setEventsPage(p => p - 1)}
-                  className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{eventsPage}</span>
-                <button disabled={eventsPage * 10 >= filteredEvents.length} onClick={() => setEventsPage(p => p + 1)}
-                  className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+              <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+                <span className="text-sm text-gray-400">
+                  Showing {Math.min((eventsPage - 1) * 10 + 1, filteredEvents.length)}–{Math.min(eventsPage * 10, filteredEvents.length)} of {filteredEvents.length}
+                </span>
+                <Pagination currentPage={eventsPage} totalItems={filteredEvents.length} pageSize={10} onPageChange={setEventsPage} />
               </div>
-            </div>
-          )}
+            )}
           </div>
         )}
       </div>
@@ -837,15 +833,11 @@ export default function SupervisorDetail() {
       </div>
     )}
     {filteredSupervisorIncidents.length > 10 && (
-      <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm text-gray-400">Showing {Math.min((incidentsPage-1)*10+1, filteredSupervisorIncidents.length)}–{Math.min(incidentsPage*10, filteredSupervisorIncidents.length)} of {filteredSupervisorIncidents.length}</span>
-        <div className="flex flex-wrap items-center gap-2">
-          <button disabled={incidentsPage === 1} onClick={() => setIncidentsPage(p => p-1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-          <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{incidentsPage}</span>
-          <button disabled={incidentsPage * 10 >= filteredSupervisorIncidents.length} onClick={() => setIncidentsPage(p => p+1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+        <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-sm text-gray-400">Showing {Math.min((incidentsPage-1)*10+1, filteredSupervisorIncidents.length)}–{Math.min(incidentsPage*10, filteredSupervisorIncidents.length)} of {filteredSupervisorIncidents.length}</span>
+          <Pagination currentPage={incidentsPage} totalItems={filteredSupervisorIncidents.length} pageSize={10} onPageChange={setIncidentsPage} />
         </div>
-      </div>
-    )}
+      )}
   </div>
 )}
 

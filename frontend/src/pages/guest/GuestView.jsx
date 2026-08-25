@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
-import { api, API, WS_BASE } from "@/lib/api";
+import { API, WS_BASE } from "@/lib/api";
 import { fmtTime } from "@/lib/time";
 import { Car, CheckCircle2, Clock, Star, Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,11 +14,17 @@ export default function GuestView() {
   const [loading, setLoading] = useState(true);
   const [invalid, setInvalid] = useState(false);
 
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [plateLast4, setPlateLast4] = useState("");
+  const [verifyError, setVerifyError] = useState(null);
+  const [verifying, setVerifying] = useState(false);
+  const [lockedOut, setLockedOut] = useState(false);
+
   // Local state only for UX (button loading, show time picker), NOT for navigation
   const [requesting, setRequesting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
-  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleMinutes, setScheduleMinutes] = useState(null);
   const [scheduling, setScheduling] = useState(false);
   const [rated, setRated] = useState(false);
   const [platformStars, setPlatformStars] = useState(0);
@@ -44,7 +50,9 @@ export default function GuestView() {
     publicApi.get(`/qr/${token}`)
       .then(({ data }) => {
         setCar(data);
-        if (!window.location.pathname.startsWith('/r/') && data.retrieval_token) {
+        if (window.location.pathname.startsWith('/v/')) {
+          setNeedsVerification(true);
+        } else if (data.retrieval_token) {
           window.history.replaceState(null, '', `/r/${data.retrieval_token}`);
         }
       })
@@ -173,7 +181,7 @@ export default function GuestView() {
     if (!car) return;
     setRequesting(true);
     try {
-      const { data } = await api.patch(`/cars/${car.id}/request-retrieval?retrieval_token=${car.retrieval_token}`);
+      const { data } = await publicApi.patch(`/cars/${car.id}/request-retrieval?retrieval_token=${car.retrieval_token}`);
       setCar(data);
     } catch { } finally { setRequesting(false); }
   };
@@ -182,7 +190,7 @@ export default function GuestView() {
     if (!car) return;
     setCancelling(true);
     try {
-      const { data } = await api.patch(`/cars/${car.id}/cancel-retrieval?retrieval_token=${car.retrieval_token}`);
+      const { data } = await publicApi.patch(`/cars/${car.id}/cancel-retrieval?retrieval_token=${car.retrieval_token}`);
       setCar(data);
     } catch (err) {
       alert(err.response?.data?.detail || "Could not cancel retrieval. Please try again.");
@@ -191,13 +199,14 @@ export default function GuestView() {
     }
   };
 
-  const scheduleRetrieval = async () => {
-    if (!scheduleTime) return;
+  const scheduleRetrieval = async (minutes) => {
+    setScheduleMinutes(minutes);
     setScheduling(true);
     try {
-      const { data } = await api.patch(
+      const scheduledDate = new Date(Date.now() + minutes * 60000);
+      const { data } = await publicApi.patch(
         `/cars/${car.id}/schedule-retrieval?retrieval_token=${car.retrieval_token}`,
-        { scheduled_time: new Date(scheduleTime).toISOString() }
+        { scheduled_time: scheduledDate.toISOString() }
       );
       setCar(data);
       setShowSchedulePicker(false);
@@ -210,12 +219,12 @@ export default function GuestView() {
 
   const cancelScheduleRetrieval = async () => {
     try {
-      const { data } = await api.patch(
+      const { data } = await publicApi.patch(
         `/cars/${car.id}/schedule-retrieval/cancel?retrieval_token=${car.retrieval_token}`
       );
       setCar(data);
       setShowSchedulePicker(false);
-      setScheduleTime("");
+      setScheduleMinutes(null);
     } catch { alert("Could not cancel scheduled pickup. Please try again."); }
   };
 
@@ -230,26 +239,41 @@ export default function GuestView() {
 
   const fetchQueuePosition = async (carId) => {
     try {
-      const { data } = await api.get(
+      const { data } = await publicApi.get(
         `/cars/${carId}/queue-position`
       );
       setQueuePosition(data);
     } catch { }
   };
 
-  const getMinDateTime = () => {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + 5);
-    const offset = now.getTimezoneOffset() * 60000;
-    return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    if (!plateLast4 || plateLast4.length < 1) return;
+    setVerifying(true);
+    setVerifyError(null);
+
+    try {
+      const { data } = await publicApi.post(
+        `/qr-cards/${token}/verify-retrieval`,
+        { plate_last4: plateLast4 }
+      );
+      setCar(data);
+      setNeedsVerification(false);
+      if (data.retrieval_token) {
+        window.history.replaceState(null, '', `/r/${data.retrieval_token}`);
+      }
+    } catch (err) {
+      if (err.response?.status === 429) {
+        setLockedOut(true);
+      } else {
+        setVerifyError(err.response?.data?.detail || "Plate doesn't match. Try again.");
+        setPlateLast4("");
+      }
+    } finally {
+      setVerifying(false);
+    }
   };
 
-  const getMaxDateTime = () => {
-    const max = new Date();
-    max.setMinutes(max.getMinutes() + 30);
-    const offset = max.getTimezoneOffset() * 60000;
-    return new Date(max.getTime() - offset).toISOString().slice(0, 16);
-  };
 
   const rate = async () => {
     try {
@@ -274,7 +298,7 @@ export default function GuestView() {
 
 
 
-  if (invalid || !car) return (
+  if (invalid || (!car && !needsVerification)) return (
     <div className="guest-bg flex items-center justify-center px-4">
       <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center fade-in-up" data-testid="guest-invalid">
         <div className="w-16 h-16 bg-amber-100 rounded-full mx-auto flex items-center justify-center">
@@ -282,6 +306,49 @@ export default function GuestView() {
         </div>
         <h1 className="font-heading text-2xl font-bold text-[#0F2044] mt-5">Invalid Link</h1>
         <p className="text-gray-500 mt-2 text-sm">Please see the valet attendant.</p>
+      </div>
+    </div>
+  );
+
+  if (needsVerification) return (
+    <div className="guest-bg flex items-center justify-center px-4">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center fade-in-up">
+        {car?.plate && (
+          <div className="mb-4 inline-block bg-gray-100 px-4 py-1.5 rounded-full">
+            <span className="font-mono-plate font-bold text-[#0F2044] tracking-wider">{car.plate}</span>
+          </div>
+        )}
+        <h1 className="font-heading text-2xl font-bold text-[#0F2044] mb-2">Verify Your Vehicle</h1>
+        <p className="text-gray-500 text-sm mb-6">Enter the last 4 digits of your license plate to view your car's status.</p>
+        
+        {lockedOut ? (
+          <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-semibold border border-red-100">
+            Too many attempts — please see the valet attendant.
+          </div>
+        ) : (
+          <form onSubmit={handleVerify} className="space-y-4">
+            <div>
+              <input 
+                type="text" 
+                maxLength={4}
+                value={plateLast4}
+                onChange={(e) => setPlateLast4(e.target.value.toUpperCase())}
+                placeholder="e.g. 1234"
+                className="w-full text-center text-3xl tracking-widest font-mono-plate font-bold bg-gray-50 border border-gray-200 rounded-2xl py-4 focus:outline-none focus:ring-2 focus:ring-[#1A3C6E] focus:border-transparent uppercase placeholder-gray-300"
+              />
+            </div>
+            {verifyError && (
+              <p className="text-red-500 text-sm font-semibold">{verifyError}</p>
+            )}
+            <button 
+              type="submit" 
+              disabled={verifying || plateLast4.length < 1}
+              className="w-full bg-[#1A3C6E] text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 hover:bg-[#0F2044] transition-colors disabled:opacity-50"
+            >
+              {verifying ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verify"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -389,33 +456,34 @@ export default function GuestView() {
                     <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
                       <div className="flex items-center justify-between mb-3">
                         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                          When are you leaving?
+                          How soon are you leaving?
                         </p>
                         <button
-                          onClick={() => { setShowSchedulePicker(false); setScheduleTime(""); }}
+                          onClick={() => { setShowSchedulePicker(false); setScheduleMinutes(null); }}
                           className="text-gray-400 hover:text-gray-600 text-lg font-bold"
                         >
                           ✕
                         </button>
                       </div>
-                      <input
-                        type="datetime-local"
-                        value={scheduleTime}
-                        onChange={e => setScheduleTime(e.target.value)}
-                        min={getMinDateTime()}
-                        max={getMaxDateTime()}
-                        className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-[#0F2044] focus:outline-none focus:border-[#1A3C6E] bg-white"
-                      />
-                      <p className="text-xs text-gray-400 mt-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          onClick={() => scheduleRetrieval(15)}
+                          disabled={scheduling}
+                          className="rounded-xl py-3.5 text-sm font-bold border-2 border-[#1A3C6E] text-[#1A3C6E] hover:bg-[#1A3C6E] hover:text-white transition disabled:opacity-50"
+                        >
+                          {scheduling && scheduleMinutes === 15 ? "Scheduling…" : "15 min"}
+                        </button>
+                        <button
+                          onClick={() => scheduleRetrieval(30)}
+                          disabled={scheduling}
+                          className="rounded-xl py-3.5 text-sm font-bold bg-[#1A3C6E] text-white hover:bg-[#0F2044] transition disabled:opacity-50"
+                        >
+                          {scheduling && scheduleMinutes === 30 ? "Scheduling…" : "30 min"}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-2 text-center">
                         Your car will be ready when you walk out 🚗
                       </p>
-                      <button
-                        onClick={scheduleRetrieval}
-                        disabled={!scheduleTime || scheduling}
-                        className="w-full mt-3 bg-[#1A3C6E] text-white rounded-xl py-3 text-sm font-bold disabled:opacity-50 hover:bg-[#0F2044] transition"
-                      >
-                        {scheduling ? "Scheduling…" : "Confirm Schedule"}
-                      </button>
                     </div>
                   )}
                   <p className="text-center text-xs text-gray-400">
@@ -531,7 +599,7 @@ export default function GuestView() {
                 </div>
               )}
 
-              {(status === "RETRIEVAL_REQUESTED" || status === "ACCEPTED") && (
+              {status === "RETRIEVAL_REQUESTED" && (
                 <button
                   onClick={handleCancelRetrieval}
                   disabled={cancelling}

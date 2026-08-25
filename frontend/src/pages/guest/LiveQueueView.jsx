@@ -156,9 +156,10 @@ export default function LiveQueueView() {
                   else if (car.status === "PARKED") rowClasses = "border-l-8 border-green-500 bg-green-50/40";
                   else if (car.status === "RETRIEVAL_REQUESTED") rowClasses = "border-l-8 border-amber-500 bg-amber-50/40 animate-blink-slow";
                   else if (["ACCEPTED", "BEING_FETCHED"].includes(car.status)) rowClasses = "border-l-8 border-red-500 bg-red-50/40 animate-blink-fast";
+                  else if (car.status === "ARRIVED_AT_GATE") rowClasses = "border-l-8 border-purple-600 bg-purple-50/40 animate-blink-fast";
                   else if (isDelivered) rowClasses = "border-l-8 border-gray-300 bg-gray-50/50 opacity-60";
-                  
-                  const isStale = !isDelivered && ["RETRIEVAL_REQUESTED", "ACCEPTED", "BEING_FETCHED"].includes(car.status) 
+
+                  const isStale = !isDelivered && ["RETRIEVAL_REQUESTED", "ACCEPTED", "BEING_FETCHED", "ARRIVED_AT_GATE"].includes(car.status) 
                     && car.minutes_in_current_status >= STALE_MINUTES_THRESHOLD;
 
                   return (

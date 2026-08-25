@@ -4,8 +4,9 @@ import SuperLayout from "@/components/layout/SuperLayout";
 import { api, WS_BASE } from "@/lib/api";
 import { fmtTime, fmtDate, fmtDateTime, fmtDateTimeFull, fmtDuration } from "@/lib/time";
 import { toast } from "sonner";
-import { ArrowLeft, Calendar, MapPin, Building2, Users, Car, Star, Clock, Info, Search, MessageSquare, FileText, FileSpreadsheet, X, ChevronDown, CheckCircle2, QrCode, Copy, Download, AlertTriangle, CheckCircle, Edit2, ExternalLink, Radio } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Building2, Users, Car, Star, Clock, Info, Search, MessageSquare, FileText, FileSpreadsheet, X, ChevronDown, CheckCircle2, QrCode, Copy, Download, AlertTriangle, Check, Edit2, Shield, Eye, Trash2, Camera, User, Plus, ChevronLeft, CarFront, Radio } from "lucide-react";
 import StatusBadge from "@/components/ui/StatusBadge";
+import { Pagination } from "../../components/ui/Pagination";
 import { QRCodeSVG } from "qrcode.react";
 
 import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
@@ -346,7 +347,7 @@ export default function EventDetail() {
       toast.success("Driver unassigned");
       refreshDrivers();
     } catch (err) {
-      toast.error("Failed to unassign driver");
+      toast.error(err.response?.data?.detail || "Failed to unassign driver");
     }
   };
 
@@ -764,9 +765,6 @@ export default function EventDetail() {
     }
   }, [event?.id, event?.event_type, event?.hotel_id]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  // const drivers = useMemo(() => event?.drivers || [], [event?.drivers]);
-
   const filteredDrivers = useMemo(() =>
     drivers.filter(d =>
       !driverSearch || `${d.name} ${d.employee_id}`.toLowerCase().includes(driverSearch.toLowerCase())
@@ -826,90 +824,12 @@ export default function EventDetail() {
         <div className="w-10 h-10 rounded-full border-4 border-[#1A3C6E] border-t-transparent animate-spin" />
         <p className="text-gray-400 text-sm font-medium">Loading...</p>
       </div>
-
-      {qrModalCar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setQrModalCar(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-6 text-center border-b border-gray-100">
-              <h3 className="font-heading text-xl font-bold text-[#0F2044] uppercase">{qrModalCar.plate}</h3>
-              <p className="text-gray-500 text-sm">{qrModalCar.guest_name || "Guest"}</p>
-            </div>
-            <div className="p-8 flex flex-col items-center">
-              {qrModalCar.retrieval_token ? (
-                <>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <QRCodeSVG id="guest-qr-svg" value={`${window.location.origin}/r/${qrModalCar.retrieval_token}`} size={200} />
-                  </div>
-                  {qrModalCar.checkin_code && (
-                    <div className="mt-6 font-mono text-3xl font-bold text-gray-700 tracking-[0.2em]">
-                      {qrModalCar.checkin_code}
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-400 mt-2">Scan to retrieve or present code</p>
-                </>
-              ) : (
-                <p className="text-gray-500 text-center py-8">QR not available for this check-in</p>
-              )}
-            </div>
-            <div className="p-4 bg-gray-50 flex gap-3">
-              <button onClick={() => setQrModalCar(null)} className="flex-1 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
-                Close
-              </button>
-              {qrModalCar.retrieval_token && (
-                <button onClick={downloadQrSvg} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-[#1A3C6E] hover:bg-[#0F2044] transition-colors flex items-center justify-center gap-2">
-                  <Download className="w-4 h-4" /> Download
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
     </SuperLayout>
 
   );
   if (!event) return (
     <SuperLayout title="Event Detail">
       <div className="p-8 text-center text-gray-400">Event not found or failed to load.</div>
-
-      {qrModalCar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setQrModalCar(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-6 text-center border-b border-gray-100">
-              <h3 className="font-heading text-xl font-bold text-[#0F2044] uppercase">{qrModalCar.plate}</h3>
-              <p className="text-gray-500 text-sm">{qrModalCar.guest_name || "Guest"}</p>
-            </div>
-            <div className="p-8 flex flex-col items-center">
-              {qrModalCar.retrieval_token ? (
-                <>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                    <QRCodeSVG id="guest-qr-svg" value={`${window.location.origin}/r/${qrModalCar.retrieval_token}`} size={200} />
-                  </div>
-                  {qrModalCar.checkin_code && (
-                    <div className="mt-6 font-mono text-3xl font-bold text-gray-700 tracking-[0.2em]">
-                      {qrModalCar.checkin_code}
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-400 mt-2">Scan to retrieve or present code</p>
-                </>
-              ) : (
-                <p className="text-gray-500 text-center py-8">QR not available for this check-in</p>
-              )}
-            </div>
-            <div className="p-4 bg-gray-50 flex gap-3">
-              <button onClick={() => setQrModalCar(null)} className="flex-1 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors">
-                Close
-              </button>
-              {qrModalCar.retrieval_token && (
-                <button onClick={downloadQrSvg} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-[#1A3C6E] hover:bg-[#0F2044] transition-colors flex items-center justify-center gap-2">
-                  <Download className="w-4 h-4" /> Download
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
     </SuperLayout>
 
   );
@@ -1007,51 +927,6 @@ export default function EventDetail() {
                   </button>
                 )}
               </div>
-
-              {/* {(!event.event_type || event.event_type === "hotel_special" || event.event_type === "regular") && (
-                eventQrToken ? (
-                  <div className="hidden sm:flex flex-row items-center gap-3 bg-white/10 border border-white/20 rounded-xl p-3">
-                    <div className="bg-white rounded-lg p-1.5 cursor-pointer" onClick={() => setShowQRModal(true)}>
-                      <QRCodeSVG
-                        id="special-event-qr-small"
-                        value={`${window.location.origin}/pre-register/event/${eventQrToken}`}
-                        size={88}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1 items-start">
-                      <div className="text-[10px] text-white/60 uppercase font-bold tracking-wider">{event.event_type === "hotel_special" ? "Special Event QR" : "Event QR"}</div>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(`${window.location.origin}/pre-register/event/${eventQrToken}`);
-                          toast.success("Link copied!");
-                        }}
-                        className="text-xs text-white/80 hover:text-white underline text-left"
-                      >
-                        Copy Link
-                      </button>
-                      <button
-                        onClick={() => {
-                          const svg = document.getElementById("special-event-qr-small");
-                          const svgData = new XMLSerializer().serializeToString(svg);
-                          const canvas = document.createElement("canvas");
-                          canvas.width = 300; canvas.height = 300;
-                          const ctx = canvas.getContext("2d");
-                          const img = new Image();
-                          img.onload = () => { ctx.drawImage(img, 0, 0, 300, 300); const a = document.createElement("a"); a.download = "special-event-qr.png"; a.href = canvas.toDataURL("image/png"); a.click(); };
-                          img.src = "data:image/svg+xml;base64," + btoa(svgData);
-                        }}
-                        className="flex items-center gap-1 text-xs text-white/80 hover:text-white text-left"
-                      >
-                        <Download className="w-3 h-3" /> Download
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="hidden sm:flex flex-row items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3 px-4">
-                    <div className="text-white/40 text-xs italic font-semibold">QR unavailable</div>
-                  </div>
-                )
-              )} */}
             </div>
           </div>
         </div>
@@ -1084,57 +959,6 @@ export default function EventDetail() {
         </div>
       </div>
 
-      {/* {showQRModal && eventQrToken && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowQRModal(false)}>
-          <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-[#0F2044] text-lg">{event.event_type === "hotel_special" ? "Special Event QR" : "Event QR"}</h3>
-            <p className="text-sm text-gray-500">Guests scan this to pre-register for this event</p>
-            <QRCodeSVG
-              id="special-event-qr-large"
-              value={`${window.location.origin}/pre-register/event/${eventQrToken}`}
-              size={250}
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  if (navigator.share) {
-                    navigator.share({ title: "Pre-register for " + event.name, url: `${window.location.origin}/pre-register/event/${eventQrToken}` });
-                  } else {
-                    navigator.clipboard.writeText(`${window.location.origin}/pre-register/event/${eventQrToken}`);
-                    toast.success("Link copied!");
-                  }
-                }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50"
-              >
-                <ExternalLink className="w-4 h-4" /> Share
-              </button>
-              <button
-                onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/pre-register/event/${eventQrToken}`); toast.success("Link copied!"); }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50"
-              >
-                <Copy className="w-4 h-4" /> Copy Link
-              </button>
-              <button
-                onClick={() => {
-                  const svg = document.getElementById("special-event-qr-large");
-                  const svgData = new XMLSerializer().serializeToString(svg);
-                  const canvas = document.createElement("canvas");
-                  canvas.width = 300; canvas.height = 300;
-                  const ctx = canvas.getContext("2d");
-                  const img = new Image();
-                  img.onload = () => { ctx.drawImage(img, 0, 0, 300, 300); const a = document.createElement("a"); a.download = "special-event-qr.png"; a.href = canvas.toDataURL("image/png"); a.click(); };
-                  img.src = "data:image/svg+xml;base64," + btoa(svgData);
-                }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0F2044] text-white text-sm font-semibold hover:bg-[#1a3c6e]"
-              >
-                <Download className="w-4 h-4" /> Download QR
-              </button>
-            </div>
-            <button onClick={() => setShowQRModal(false)} className="text-xs text-gray-400 hover:text-gray-600">Close</button>
-          </div>
-        </div>
-      )} */}
-
       <div className="mt-6">
         {activeTab === "info" && (
           <div className="grid grid-cols-1 gap-6">
@@ -1155,68 +979,6 @@ export default function EventDetail() {
                 </div>
               ))}
             </div>
-
-            {/* Event Host (Only for Regular Events) */}
-            {/* {event.event_type !== "hotel_daily" && (
-              <div className="bg-white rounded-2xl shadow-card border border-gray-100 p-6">
-                <h3 className="font-heading text-lg font-bold text-[#0F2044] mb-4">Event Host</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1">Host Name</label>
-                    <input
-                      type="text"
-                      value={event.host_name || ""}
-                      onChange={e => setEvent({ ...event, host_name: e.target.value })}
-                      placeholder="e.g. John Doe"
-                      className="w-full px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#1D4ED8]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1">Host Email</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="email"
-                        value={event.host_email || ""}
-                        onChange={e => setEvent({ ...event, host_email: e.target.value })}
-                        placeholder="john@example.com"
-                        disabled={isClosed}
-                        className={`flex-1 px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#1D4ED8] ${isClosed ? "bg-gray-50 text-gray-400" : ""}`}
-                      />
-                      {isClosed ? (
-                        <div className="px-4 py-2 bg-gray-100 text-gray-400 text-sm font-bold rounded-xl border border-gray-200 flex items-center justify-center whitespace-nowrap">
-                          Cannot send — Closed
-                        </div>
-                      ) : (
-                        <button
-                          onClick={async () => {
-                            if (!event.host_email) return toast.error("Please enter host email");
-                            try {
-                              await api.patch(`/events/${eid}/host`, {
-                                host_name: event.host_name,
-                                host_email: event.host_email
-                              });
-                              toast.success("Host updated and portal email sent");
-                              load();
-                            } catch (err) {
-                              toast.error(err?.response?.data?.detail || "Failed to update host");
-                            }
-                          }}
-                          className="px-4 py-2 bg-[#1A3C6E] text-white text-sm font-bold rounded-xl hover:bg-[#0F2044] transition-colors whitespace-nowrap"
-                        >
-                          {event.host_email_sent ? "Resend Portal" : "Send Portal"}
-                        </button>
-                      )}
-
-                    </div>
-                  </div>
-                </div>
-                {event.host_email_sent && (
-                  <div className="mt-3 text-xs font-bold text-emerald-600 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Portal email sent
-                  </div>
-                )}
-              </div>
-            )} */}
 
             {event.status !== "closed" && (
               <div className="bg-white rounded-2xl shadow-card border border-gray-100 p-6 mt-6">
@@ -1600,20 +1362,12 @@ export default function EventDetail() {
                         <span className="text-sm text-gray-400">
                           Showing {Math.min((driversPage - 1) * 10 + 1, filteredDrivers.length)}–{Math.min(driversPage * 10, filteredDrivers.length)} of {filteredDrivers.length}
                         </span>
-                        <div className="flex items-center gap-2">
-                          <button disabled={driversPage === 1} onClick={() => setDriversPage(p => p - 1)}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                          <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{driversPage}</span>
-                          <button disabled={driversPage * 10 >= filteredDrivers.length} onClick={() => setDriversPage(p => p + 1)}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-                        </div>
+                        <Pagination currentPage={driversPage} totalItems={filteredDrivers.length} pageSize={10} onPageChange={setDriversPage} />
                       </div>
                     )}
                   </div>
                 )}
               </div>
-
-
             </>
           ) : (
             <div className="mb-6">
@@ -1681,13 +1435,7 @@ export default function EventDetail() {
                         <span className="text-sm text-gray-400">
                           Showing {Math.min((driverCarsPage - 1) * 10 + 1, driverCars.length)}–{Math.min(driverCarsPage * 10, driverCars.length)} of {driverCars.length}
                         </span>
-                        <div className="flex items-center gap-2">
-                          <button disabled={driverCarsPage === 1} onClick={() => setDriverCarsPage(p => p - 1)}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                          <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{driverCarsPage}</span>
-                          <button disabled={driverCarsPage * 10 >= driverCars.length} onClick={() => setDriverCarsPage(p => p + 1)}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-                        </div>
+                        <Pagination currentPage={driverCarsPage} totalItems={driverCars.length} pageSize={10} onPageChange={setDriverCarsPage} />
                       </div>
                     )}
                   </div>
@@ -1761,11 +1509,7 @@ export default function EventDetail() {
             {filteredIncidents.length > 10 && (
               <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
                 <span className="text-sm text-gray-400">Showing {Math.min((incidentsPage - 1) * 10 + 1, filteredIncidents.length)}–{Math.min(incidentsPage * 10, filteredIncidents.length)} of {filteredIncidents.length}</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button disabled={incidentsPage === 1} onClick={() => setIncidentsPage(p => p - 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                  <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{incidentsPage}</span>
-                  <button disabled={incidentsPage * 10 >= filteredIncidents.length} onClick={() => setIncidentsPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
-                </div>
+                <Pagination currentPage={incidentsPage} totalItems={filteredIncidents.length} pageSize={10} onPageChange={setIncidentsPage} />
               </div>
             )}
           </div>

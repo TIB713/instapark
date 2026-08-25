@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import SuperLayout from "@/components/layout/SuperLayout";
+import StatusBadge from "@/components/ui/StatusBadge";
+import { Pagination } from "../../components/ui/Pagination";
 import { api, decodeJwt } from "@/lib/api";
 import { toast } from "sonner";
 import { Search, Users, Shield, ChevronDown, Check, AlertTriangle, CheckCircle } from "lucide-react";
@@ -203,20 +205,14 @@ export default function Supervisors() {
                   ))}
                 </tbody>
               </table>
-              {filtered.length > PAGE_SIZE && (
-                <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-sm text-gray-400">
-                    Showing {Math.min((page - 1) * PAGE_SIZE + 1, filtered.length)}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
-                      className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                    <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{page}</span>
-                    <button disabled={page * PAGE_SIZE >= filtered.length} onClick={() => setPage(p => p + 1)}
-                      className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+                {filtered.length > PAGE_SIZE && (
+                  <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-sm text-gray-400">
+                      Showing {Math.min((page - 1) * PAGE_SIZE + 1, filtered.length)}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+                    </span>
+                    <Pagination currentPage={page} totalItems={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
                   </div>
-                </div>
-              )}
+                )}
               </div>
             </div>
           )}

@@ -15,6 +15,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import SkeletonTable from "@/components/ui/SkeletonTable";
 import { QRCodeSVG } from "qrcode.react";
 import StatusBadge from "@/components/ui/StatusBadge";
+import { Pagination } from "../../components/ui/Pagination";
 
 import { useScrollToFirstError } from "../../hooks/useScrollToFirstError";
 
@@ -1226,19 +1227,13 @@ export default function ValetProviderHotelDetail() {
                     </tbody>
                   </table>
                   {filteredDrivers.length > 10 && (
-                    <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-                      <span className="text-sm text-gray-400">
-                        Showing {Math.min((driversPage - 1) * 10 + 1, filteredDrivers.length)}–{Math.min(driversPage * 10, filteredDrivers.length)} of {filteredDrivers.length}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button disabled={driversPage === 1} onClick={() => setDriversPage(p => p - 1)}
-                          className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                        <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{driversPage}</span>
-                        <button disabled={driversPage * 10 >= filteredDrivers.length} onClick={() => setDriversPage(p => p + 1)}
-                          className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+                      <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+                        <span className="text-sm text-gray-400">
+                          Showing {Math.min((driversPage - 1) * 10 + 1, filteredDrivers.length)}–{Math.min(driversPage * 10, filteredDrivers.length)} of {filteredDrivers.length}
+                        </span>
+                        <Pagination currentPage={driversPage} totalItems={filteredDrivers.length} pageSize={10} onPageChange={setDriversPage} />
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
               )}
             </div>
@@ -1313,19 +1308,13 @@ export default function ValetProviderHotelDetail() {
                     </tbody>
                   </table>
                   {filteredSupervisors.length > 10 && (
-                    <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-                      <span className="text-sm text-gray-400">
-                        Showing {Math.min((supervisorsPage - 1) * 10 + 1, filteredSupervisors.length)}–{Math.min(supervisorsPage * 10, filteredSupervisors.length)} of {filteredSupervisors.length}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button disabled={supervisorsPage === 1} onClick={() => setSupervisorsPage(p => p - 1)}
-                          className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                        <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{supervisorsPage}</span>
-                        <button disabled={supervisorsPage * 10 >= filteredSupervisors.length} onClick={() => setSupervisorsPage(p => p + 1)}
-                          className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+                      <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+                        <span className="text-sm text-gray-400">
+                          Showing {Math.min((supervisorsPage - 1) * 10 + 1, filteredSupervisors.length)}–{Math.min(supervisorsPage * 10, filteredSupervisors.length)} of {filteredSupervisors.length}
+                        </span>
+                        <Pagination currentPage={supervisorsPage} totalItems={filteredSupervisors.length} pageSize={10} onPageChange={setSupervisorsPage} />
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
               )}
             </div>
@@ -1549,15 +1538,11 @@ export default function ValetProviderHotelDetail() {
               </div>
             )}
             {filteredHotelCars.length > 10 && (
-              <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-                <span className="text-sm text-gray-400">Showing {Math.min((hotelCarsPage - 1) * 10 + 1, filteredHotelCars.length)}–{Math.min(hotelCarsPage * 10, filteredHotelCars.length)} of {filteredHotelCars.length}</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button disabled={hotelCarsPage === 1} onClick={() => setHotelCarsPage(p => p - 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                  <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{hotelCarsPage}</span>
-                  <button disabled={hotelCarsPage * 10 >= filteredHotelCars.length} onClick={() => setHotelCarsPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+                <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-sm text-gray-400">Showing {Math.min((hotelCarsPage - 1) * 10 + 1, filteredHotelCars.length)}–{Math.min(hotelCarsPage * 10, filteredHotelCars.length)} of {filteredHotelCars.length}</span>
+                  <Pagination currentPage={hotelCarsPage} totalItems={filteredHotelCars.length} pageSize={10} onPageChange={setHotelCarsPage} />
                 </div>
-              </div>
-            )}
+              )}
           </div>
         )}
 
@@ -1709,15 +1694,11 @@ export default function ValetProviderHotelDetail() {
               </div>
             )}
             {filteredHotelIncidents.length > 10 && (
-              <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-                <span className="text-sm text-gray-400">Showing {Math.min((hotelIncidentsPage - 1) * 10 + 1, filteredHotelIncidents.length)}–{Math.min(hotelIncidentsPage * 10, filteredHotelIncidents.length)} of {filteredHotelIncidents.length}</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button disabled={hotelIncidentsPage === 1} onClick={() => setHotelIncidentsPage(p => p - 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
-                  <span className="px-3 py-1.5 rounded-lg bg-[#0F2044] text-white text-sm font-bold">{hotelIncidentsPage}</span>
-                  <button disabled={hotelIncidentsPage * 10 >= filteredHotelIncidents.length} onClick={() => setHotelIncidentsPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+                <div className="px-4 sm:px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-sm text-gray-400">Showing {Math.min((hotelIncidentsPage - 1) * 10 + 1, filteredHotelIncidents.length)}–{Math.min(hotelIncidentsPage * 10, filteredHotelIncidents.length)} of {filteredHotelIncidents.length}</span>
+                  <Pagination currentPage={hotelIncidentsPage} totalItems={filteredHotelIncidents.length} pageSize={10} onPageChange={setHotelIncidentsPage} />
                 </div>
-              </div>
-            )}
+              )}
           </div>
         )}
 

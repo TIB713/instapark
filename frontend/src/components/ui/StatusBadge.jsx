@@ -46,6 +46,13 @@ const CONFIG = {
     pulse: false,
     spin: true,
   },
+  ARRIVED_AT_GATE: {
+    className: "bg-purple-100 text-purple-700",
+    Icon: Car,
+    pulse: true,
+    spin: false,
+    label: "At Gate",
+  },
   DELIVERED: {
     className: "bg-gray-100 text-gray-500",
     Icon: CheckCheck,
@@ -78,7 +85,8 @@ const CONFIG = {
   },
 };
 
-function humanizeStatus(status) {
+function humanizeStatus(status, label) {
+  if (label) return label;
   if (!status) return "";
   return String(status)
     .toLowerCase()
@@ -94,7 +102,7 @@ export default function StatusBadge({ status, size = "sm" }) {
     pulse: false,
     spin: false,
   };
-  const { Icon } = cfg;
+  const { Icon, label } = cfg;
 
   const isLg = size === "lg";
   const base =
@@ -108,7 +116,7 @@ export default function StatusBadge({ status, size = "sm" }) {
         <span className="w-1.5 h-1.5 rounded-full bg-current pulse-dot" />
       )}
       <Icon className={`${iconSize} ${cfg.spin ? "animate-spin" : ""}`} />
-      <span>{humanizeStatus(status)}</span>
+      <span>{humanizeStatus(status, label)}</span>
     </span>
   );
 }

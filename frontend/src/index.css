@@ -69,6 +69,17 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 .shadow-card { box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04); }
 
+.animate-blink-slow {
+    animation: blink-status 1.6s ease-in-out infinite;
+}
+.animate-blink-fast {
+    animation: blink-status 0.8s ease-in-out infinite;
+}
+@keyframes blink-status {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+
 .pulse-dot {
     animation: pulse-dot 1.5s ease-in-out infinite;
 }
