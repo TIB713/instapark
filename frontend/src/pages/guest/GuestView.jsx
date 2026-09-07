@@ -26,6 +26,9 @@ export default function GuestView() {
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const [scheduleMinutes, setScheduleMinutes] = useState(null);
   const [scheduling, setScheduling] = useState(false);
+  const [showRetrievalOptions, setShowRetrievalOptions] = useState(false);
+  const [selfPickupOtp, setSelfPickupOtp] = useState(null);
+  const [requestingSelfPickup, setRequestingSelfPickup] = useState(false);
   const [rated, setRated] = useState(false);
   const [platformStars, setPlatformStars] = useState(0);
   const [hoverPlatform, setHoverPlatform] = useState(0);
@@ -50,7 +53,7 @@ export default function GuestView() {
     publicApi.get(`/qr/${token}`)
       .then(({ data }) => {
         setCar(data);
-        if (window.location.pathname.startsWith('/v/')) {
+        if (data.requires_verification) {
           setNeedsVerification(true);
         } else if (data.retrieval_token) {
           window.history.replaceState(null, '', `/r/${data.retrieval_token}`);
@@ -186,6 +189,21 @@ export default function GuestView() {
     } catch { } finally { setRequesting(false); }
   };
 
+  const handleSelfPickupRequest = async () => {
+    if (!car) return;
+    setRequestingSelfPickup(true);
+    try {
+      const { data } = await publicApi.patch(
+        `/cars/${car.id}/self-pickup-request?retrieval_token=${car.retrieval_token}`
+      );
+      setSelfPickupOtp(data.otp);
+    } catch (err) {
+      alert(err?.response?.data?.detail || "Could not request self-pickup. Please try again.");
+    } finally {
+      setRequestingSelfPickup(false);
+    }
+  };
+
   const handleCancelRetrieval = async () => {
     if (!car) return;
     setCancelling(true);
@@ -319,7 +337,7 @@ export default function GuestView() {
           </div>
         )}
         <h1 className="font-heading text-2xl font-bold text-[#0F2044] mb-2">Verify Your Vehicle</h1>
-        <p className="text-gray-500 text-sm mb-6">Enter the last 4 digits of your license plate to view your car's status.</p>
+        <p className="text-gray-500 text-sm mb-6">Enter the last 4 characters of your license plate (or all of it, if it's shorter than 4) to view your car's status.</p>
         
         {lockedOut ? (
           <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-semibold border border-red-100">
@@ -333,8 +351,8 @@ export default function GuestView() {
                 maxLength={4}
                 value={plateLast4}
                 onChange={(e) => setPlateLast4(e.target.value.toUpperCase())}
-                placeholder="e.g. 1234"
-                className="w-full text-center text-3xl tracking-widest font-mono-plate font-bold bg-gray-50 border border-gray-200 rounded-2xl py-4 focus:outline-none focus:ring-2 focus:ring-[#1A3C6E] focus:border-transparent uppercase placeholder-gray-300"
+                placeholder="e.g. 1234 or 555"
+                className="w-full text-center text-3xl tracking-widest font-mono-plate font-bold bg-gray-50 border border-gray-200 rounded-2xl py-4 focus:outline-none focus:ring-2 focus:ring-[#1A3C6E] focus:border-transparent uppercase placeholder-gray-300 placeholder:text-base placeholder:font-normal placeholder:tracking-normal"
               />
             </div>
             {verifyError && (
@@ -414,8 +432,21 @@ export default function GuestView() {
               </>
             ) : (
               <>
-                {/* Screen 1: Two Buttons */}
-                <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 text-center text-white">
+                {/* Screen 1 / 2 header */}
+                <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 text-center text-white relative">
+                  {showRetrievalOptions && (
+                    <button 
+                      onClick={() => {
+                        setShowRetrievalOptions(false);
+                        setShowSchedulePicker(false);
+                        setScheduleMinutes(null);
+                        setSelfPickupOtp(null);
+                      }}
+                      className="absolute top-4 left-4 w-8 h-8 flex items-center justify-center bg-white/20 rounded-full backdrop-blur hover:bg-white/30 transition-all"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                    </button>
+                  )}
                   <div className="w-16 h-16 bg-white/20 rounded-full mx-auto flex items-center justify-center backdrop-blur">
                     <CheckCircle2 className="w-9 h-9 text-white" />
                   </div>
@@ -427,69 +458,92 @@ export default function GuestView() {
                     </p>
                   )}
                 </div>
-                <div className="p-6 flex flex-col gap-3">
-                  {car?.gps_lat != null && car?.gps_lng != null && (
+                
+                {!showRetrievalOptions ? (
+                  <div className="p-6 flex flex-col gap-3">
+                    {car?.gps_lat != null && car?.gps_lng != null && (
+                      <button
+                        onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${car.gps_lat},${car.gps_lng}`, "_blank")}
+                        className="w-full rounded-2xl py-3.5 text-sm font-semibold border-2 border-emerald-600 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all"
+                      >
+                        📍 See Where My Car Is Parked
+                      </button>
+                    )}
                     <button
-                      onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${car.gps_lat},${car.gps_lng}`, "_blank")}
-                      className="w-full rounded-2xl py-3.5 text-sm font-semibold border-2 border-emerald-600 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all"
+                      onClick={() => setShowRetrievalOptions(true)}
+                      className="w-full btn-primary-navy rounded-2xl py-4 text-lg font-semibold"
                     >
-                      📍 See Where My Car Is Parked
+                      Retrieve My Car
                     </button>
-                  )}
-                  {car?.can_request_retrieval && (
+                  </div>
+                ) : (
+                  <div className="p-6 flex flex-col gap-3">
+                    {car?.can_request_retrieval && (
+                      <button
+                        onClick={handleRequestRetrieval}
+                        disabled={requesting}
+                        data-testid="request-car-btn"
+                        className="w-full btn-primary-navy rounded-2xl py-4 text-lg font-semibold disabled:opacity-70"
+                      >
+                        {requesting ? "Requesting…" : "🚗 Send Retrieval Now"}
+                      </button>
+                    )}
                     <button
-                      onClick={handleRequestRetrieval}
-                      disabled={requesting}
-                      data-testid="request-car-btn"
-                      className="w-full btn-primary-navy rounded-2xl py-4 text-lg font-semibold disabled:opacity-70"
+                      onClick={() => setShowSchedulePicker(true)}
+                      className="w-full rounded-2xl py-3.5 text-sm font-semibold border-2 border-[#1A3C6E] text-[#1A3C6E] hover:bg-[#1A3C6E] hover:text-white transition-all"
                     >
-                      {requesting ? "Requesting…" : "🚗 Retrieve My Car Now"}
+                      ⏰ Schedule Retrieval
                     </button>
-                  )}
-                  <button
-                    onClick={() => setShowSchedulePicker(true)}
-                    className="w-full rounded-2xl py-3.5 text-sm font-semibold border-2 border-[#1A3C6E] text-[#1A3C6E] hover:bg-[#1A3C6E] hover:text-white transition-all"
-                  >
-                    ⏰ Schedule for Later
-                  </button>
-                  {showSchedulePicker && (
-                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-                      <div className="flex items-center justify-between mb-3">
-                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                          How soon are you leaving?
+                    {showSchedulePicker && (
+                      <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                            How soon are you leaving?
+                          </p>
+                          <button
+                            onClick={() => { setShowSchedulePicker(false); setScheduleMinutes(null); }}
+                            className="text-gray-400 hover:text-gray-600 text-lg font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            onClick={() => scheduleRetrieval(15)}
+                            disabled={scheduling}
+                            className="rounded-xl py-3.5 text-sm font-bold border-2 border-[#1A3C6E] text-[#1A3C6E] hover:bg-[#1A3C6E] hover:text-white transition disabled:opacity-50"
+                          >
+                            {scheduling && scheduleMinutes === 15 ? "Scheduling…" : "15 min"}
+                          </button>
+                          <button
+                            onClick={() => scheduleRetrieval(30)}
+                            disabled={scheduling}
+                            className="rounded-xl py-3.5 text-sm font-bold bg-[#1A3C6E] text-white hover:bg-[#0F2044] transition disabled:opacity-50"
+                          >
+                            {scheduling && scheduleMinutes === 30 ? "Scheduling…" : "30 min"}
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2 text-center">
+                          Your car will be ready when you walk out 🚗
                         </p>
-                        <button
-                          onClick={() => { setShowSchedulePicker(false); setScheduleMinutes(null); }}
-                          className="text-gray-400 hover:text-gray-600 text-lg font-bold"
-                        >
-                          ✕
-                        </button>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button
-                          onClick={() => scheduleRetrieval(15)}
-                          disabled={scheduling}
-                          className="rounded-xl py-3.5 text-sm font-bold border-2 border-[#1A3C6E] text-[#1A3C6E] hover:bg-[#1A3C6E] hover:text-white transition disabled:opacity-50"
-                        >
-                          {scheduling && scheduleMinutes === 15 ? "Scheduling…" : "15 min"}
-                        </button>
-                        <button
-                          onClick={() => scheduleRetrieval(30)}
-                          disabled={scheduling}
-                          className="rounded-xl py-3.5 text-sm font-bold bg-[#1A3C6E] text-white hover:bg-[#0F2044] transition disabled:opacity-50"
-                        >
-                          {scheduling && scheduleMinutes === 30 ? "Scheduling…" : "30 min"}
-                        </button>
+                    )}
+                    <button
+                      onClick={handleSelfPickupRequest}
+                      disabled={requestingSelfPickup}
+                      className="w-full rounded-2xl py-3.5 text-sm font-semibold border-2 border-[#1A3C6E] text-[#1A3C6E] hover:bg-[#1A3C6E] hover:text-white transition-all disabled:opacity-70"
+                    >
+                      🙋 Self Pickup
+                    </button>
+                    {selfPickupOtp && (
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-center mt-2">
+                        <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Show this code at the valet desk</p>
+                        <p className="text-4xl font-extrabold text-[#0F2044] mt-2 tracking-widest">{selfPickupOtp}</p>
+                        <p className="text-xs text-gray-400 mt-2">A valet supervisor has been notified you're picking up your own car.</p>
                       </div>
-                      <p className="text-xs text-gray-400 mt-2 text-center">
-                        Your car will be ready when you walk out 🚗
-                      </p>
-                    </div>
-                  )}
-                  <p className="text-center text-xs text-gray-400">
-                    Request now or schedule for later
-                  </p>
-                </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

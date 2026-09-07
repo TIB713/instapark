@@ -7,7 +7,8 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowLeft, Calendar, MapPin, Clock, Users,
   Car, Info, Star, MessageSquare, CheckCircle2,
-  AlertTriangle, Search, ChevronDown, Edit2, QrCode, Download
+  AlertTriangle, Search, ChevronDown, Edit2, QrCode, Download,
+  FileText, FileSpreadsheet
 } from "lucide-react";
 import StatusBadge from "@/components/ui/StatusBadge";
 import { fmtTime, fmtDate, fmtDateTime } from "@/lib/time";
@@ -57,7 +58,7 @@ export default function OwnerEventDetail() {
   };
   
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ name: "", venue: "", date: "", end_date: "", start_time: "", end_time: "", max_cars: "", gate_timer_minutes: "", allow_instant_park: false, zones: [], gates: "" });
+  const [editForm, setEditForm] = useState({ name: "", venue: "", date: "", end_date: "", start_time: "", end_time: "", max_cars: "", gate_timer_minutes: "", zones: [], gates: "" });
   const [editErrors, setEditErrors] = useState({});
   const isHotelDaily = event?.event_type === "hotel_daily";
   
@@ -94,6 +95,65 @@ export default function OwnerEventDetail() {
   const [incidentSearch, setIncidentSearch] = useState("");
   const [incidentsPage, setIncidentsPage] = useState(1);
 
+  const generateCSV = async () => {
+    try {
+      const res = await api.get(`/events/${eid}/report.csv`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${event.name.replace(/\s+/g, "_")}_report.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("CSV downloaded");
+    } catch (err) {
+      if (err.response?.status === 403) toast.error("Access denied — you can only export reports for your own events");
+      else if (err.response?.status === 404) toast.error("Event not found");
+      else toast.error("Failed to generate report — please try again");
+    }
+  };
+
+  const generatePDF = async () => {
+    try {
+      const res = await api.get(`/events/${eid}/report.html`, { responseType: "text" });
+      const w = window.open("", "_blank");
+      w.document.write(res.data);
+      w.document.close();
+      setTimeout(() => w.print(), 500);
+      toast.success("PDF ready to print/save");
+    } catch (err) {
+      if (err.response?.status === 403) toast.error("Access denied — you can only export reports for your own events");
+      else if (err.response?.status === 404) toast.error("Event not found");
+      else toast.error("Failed to generate report — please try again");
+    }
+  };
+
+  const handleCloseEvent = async () => {
+    const activeCars = (event.currently_parked || 0) + (event.pending_retrievals || 0);
+    const msg = activeCars > 0 
+      ? `${activeCars} vehicle(s) haven't been retrieved yet — close anyway?`
+      : "Are you sure you want to close this event? This cannot be undone.";
+      
+    if (!window.confirm(msg)) return;
+    try {
+      await api.post(`/events/${eid}/close`);
+      toast.success("Event closed successfully");
+      load();
+    } catch {
+      toast.error("Failed to close event");
+    }
+  };
+
+  const handleActivateEvent = async () => {
+    if (!window.confirm("Activate this event now, ahead of its scheduled start time?")) return;
+    try {
+      await api.post(`/events/${eid}/activate`);
+      toast.success("Event activated");
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to activate event");
+    }
+  };
+
   useEffect(() => { setDriversPage(1); }, [driverSearch]);
   useEffect(() => { setSupervisorsPage(1); }, [supervisorSearch]);
   useEffect(() => { setIncidentsPage(1); }, [incidentSearch]);
@@ -112,7 +172,6 @@ export default function OwnerEventDetail() {
           end_time: e.end_time || "",
           max_cars: e.max_cars || "",
           gate_timer_minutes: e.gate_timer_minutes || "",
-          allow_instant_park: !!e.allow_instant_park,
           zones: e.zones || [],
           gates: e.gates ? e.gates.join(", ") : ""
         });
@@ -204,9 +263,12 @@ export default function OwnerEventDetail() {
   const paginatedSupervisors = filteredSupervisors.slice((supervisorsPage - 1) * 10, supervisorsPage * 10);
 
   const filteredCars = useMemo(() =>
-    cars.filter(c => 
-      !carSearch || `${c.plate} ${c.make} ${c.color} ${c.check_in_driver_name} ${c.retrieval_driver_name}`.toLowerCase().includes(carSearch.toLowerCase())
-    ), [cars, carSearch]);
+    cars.filter(c => {
+      const q = carSearch.toLowerCase();
+      const matchText = !carSearch || `${c.plate} ${c.make} ${c.color} ${c.check_in_driver_name} ${c.retrieval_driver_name}`.toLowerCase().includes(q);
+      const matchCode = !!carSearch && c.status !== "DELIVERED" && c.card_code && c.card_code.toLowerCase().includes(q);
+      return !carSearch || matchText || matchCode;
+    }), [cars, carSearch]);
 
   const handleEditEvent = async (e) => {
     e.preventDefault();
@@ -237,8 +299,7 @@ export default function OwnerEventDetail() {
           start_time: editForm.start_time,
           end_time: editForm.end_time,
           gates: parsedGates,
-          gate_timer_minutes: parseInt(editForm.gate_timer_minutes) || 5,
-          allow_instant_park: editForm.allow_instant_park
+          gate_timer_minutes: parseInt(editForm.gate_timer_minutes) || 5
         };
       } else {
         body = {
@@ -398,7 +459,11 @@ export default function OwnerEventDetail() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <h1 className="font-heading text-2xl font-bold text-white truncate">{event.name}</h1>
-                  {event.status === "active" ? (
+                  {event.status === "upcoming" ? (
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center gap-1.5">
+                      Upcoming
+                    </span>
+                  ) : event.status === "active" ? (
                     <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot" /> Active
                     </span>
@@ -413,12 +478,42 @@ export default function OwnerEventDetail() {
               </div>
             </div>
             {!editOpen && (
-              <button
-                onClick={() => setEditOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all"
-              >
-                <Edit2 className="w-3.5 h-3.5" /> Edit
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={generateCSV}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> CSV
+                </button>
+                <button
+                  onClick={generatePDF}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all"
+                >
+                  <FileText className="w-3.5 h-3.5" /> PDF
+                </button>
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all"
+                >
+                  <Edit2 className="w-3.5 h-3.5" /> Edit
+                </button>
+                {event.status === "active" && (
+                  <button
+                    onClick={handleCloseEvent}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all"
+                  >
+                    Close Event
+                  </button>
+                )}
+                {event.status === "upcoming" && (
+                  <button
+                    onClick={handleActivateEvent}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-400/30 text-xs font-bold hover:bg-amber-500/30 transition-all"
+                  >
+                    Activate
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -567,14 +662,7 @@ export default function OwnerEventDetail() {
                           { editErrors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.gate_timer_minutes}</p> }
                           <p className="text-[10px] text-gray-400 mt-1 leading-tight">How long the guest has to reach the gate before the car is sent back.</p>
                         </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <input type="checkbox" id="edit_allow_instant_park" checked={editForm.allow_instant_park}
-                                 onChange={(e) => setEditForm({ ...editForm, allow_instant_park: e.target.checked })}
-                                 className="w-4 h-4 text-[#1A3C6E] bg-gray-100 border-gray-300 rounded focus:ring-[#1A3C6E]" />
-                          <label htmlFor="edit_allow_instant_park" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
-                            Allow Instant Park for this event
-                          </label>
-                        </div>
+                        
                       </div>
                       
                       <div>
@@ -908,7 +996,7 @@ export default function OwnerEventDetail() {
                 <input
                   value={carSearch}
                   onChange={(e) => setCarSearch(e.target.value)}
-                  placeholder="Search plate, make, color, driver…"
+                  placeholder="Search plate, code, make, color, driver…"
                   className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#1A3C6E]"
                 />
               </div>
@@ -924,7 +1012,7 @@ export default function OwnerEventDetail() {
                   <table className="w-full text-sm min-w-[600px]">
                     <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-semibold">
                       <tr>
-                        <th className="text-left px-5 py-3">Plate</th>
+                        <th className="text-left px-5 py-3">Plate</th><th className="text-left px-5 py-3">Code</th>
                         <th className="text-left px-5 py-3">Make/Color</th>
                         <th className="text-left px-5 py-3">Gate</th>
                         <th className="text-left px-5 py-3">Zone/Slot</th>
@@ -939,21 +1027,25 @@ export default function OwnerEventDetail() {
                     <tbody>
                       {filteredCars.map(c => (
                         <tr key={c.id}>
-                          <td colSpan={10} className="p-0">
+                          <td colSpan={11} className="p-0">
                             <div
-                              onClick={() => nav(`/provider/cars/${encodeURIComponent(c.plate)}`)}
+                              onClick={() => nav(c.has_plate_issue ? `/provider/cars/id/${c.id}` : `/provider/cars/${encodeURIComponent(c.plate)}`)}
                               className="w-full border-t border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors flex items-center"
                             >
-                              <div className="flex-1 grid grid-cols-9">
+                              <div className="flex-1 grid grid-cols-10">
                                 <div className="px-5 py-3 font-bold uppercase flex items-center gap-2 col-span-1">
-                                  {c.plate}
+                                  {c.plate || <span className="italic text-gray-400 font-normal text-xs">No Plate</span>}
+                                  {c.has_plate_issue && c.plate && (
+                                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">TC</span>
+                                  )}
                                   {c.carried_forward && (
                                     <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
                                       Overnight
                                     </span>
                                   )}
                                 </div>
-                                <div className="px-5 py-3 text-gray-600 col-span-1">{c.make} / {c.color}</div>
+                                <div className="px-5 py-3 font-mono text-gray-600 col-span-1">{c.card_code || "—"}</div>
+                            <div className="px-5 py-3 text-gray-600 col-span-1">{c.make} / {c.color}</div>
                                 <div className="px-5 py-3 text-gray-500 col-span-1">{c.gate || "—"}</div>
                                 <div className="px-5 py-3 font-medium col-span-1">{c.zone ? `${c.zone} / ${c.slot}` : "—"}</div>
                                 <div className="px-5 py-3 col-span-1">

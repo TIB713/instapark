@@ -35,7 +35,7 @@ export default function OwnerEvents() {
     name: "", date: "", end_date: "", venue: "", max_cars: 50,
     gates: ["Main Gate"], start_time: "", end_time: "",
     zones: [{ name: "A", slots: 20 }],
-    host_name: "", host_email: "", allow_instant_park: false
+    host_name: "", host_email: ""
   });
   const totalEventSlots = eventForm.zones.reduce((sum, z) => sum + (parseInt(z.slots) || 0), 0);
 
@@ -135,7 +135,7 @@ export default function OwnerEvents() {
         toast.success("Special event created!");
       }
       setShowEventModal(false);
-      setEventForm({ hotel_id: "", name: "", date: "", end_date: "", venue: "", max_cars: 50, gates: ["Main Gate"], start_time: "", end_time: "", zones: [{ name: "A", slots: 20 }], host_name: "", host_email: "", allow_instant_park: false });
+      setEventForm({ hotel_id: "", name: "", date: "", end_date: "", venue: "", max_cars: 50, gates: ["Main Gate"], start_time: "", end_time: "", zones: [{ name: "A", slots: 20 }], host_name: "", host_email: "" });
       
       // Refresh events
       api.get("/events").then(r => setRows(Array.isArray(r.data) ? r.data : []));
@@ -283,7 +283,7 @@ export default function OwnerEvents() {
                     </span>
                     {openDropdown === 'status' && (
                       <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg p-1 min-w-[140px] font-normal normal-case">
-                        {["all", "active", "closed"].map(opt => (
+                        {["all", "active", "upcoming", "closed"].map(opt => (
                           <div key={opt} onClick={() => { const p = new URLSearchParams(params); if(opt==="all") p.delete("filter"); else p.set("filter", opt); setParams(p); setOpenDropdown(null); }} className="px-3 py-2 text-sm rounded-lg cursor-pointer hover:bg-gray-50 flex items-center gap-2 capitalize">
                             {filter === opt ? <div className="w-2 h-2 rounded-full bg-[#1A3C6E]" /> : <div className="w-2 h-2" />}
                             {opt}
@@ -303,7 +303,11 @@ export default function OwnerEvents() {
                     <td className="px-5 py-3 text-gray-600">{e.date || "—"}</td>
                     <td className="px-5 py-3 text-gray-600 hidden sm:table-cell">{e.venue || "—"}</td>
                     <td className="px-5 py-3">
-                      {e.status === "active" ? (
+                      {e.status === "upcoming" ? (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 inline-flex items-center gap-1">
+                          Upcoming
+                        </span>
+                      ) : e.status === "active" ? (
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 inline-flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block pulse-dot" />
                           Active
@@ -455,14 +459,7 @@ export default function OwnerEvents() {
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.max_cars ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
                   { eventErrors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.max_cars}</p> }
                 </div>
-                <div className="flex items-center gap-2 mt-4 sm:col-span-2">
-                  <input type="checkbox" id="allow_instant_park_event" checked={eventForm.allow_instant_park}
-                         onChange={(e) => setEventForm(prev => ({ ...prev, allow_instant_park: e.target.checked }))}
-                         className="w-4 h-4 text-[#0F2044] bg-gray-100 border-gray-300 rounded focus:ring-[#0F2044]" />
-                  <label htmlFor="allow_instant_park_event" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
-                    Allow Instant Park for this event
-                  </label>
-                </div>
+                
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gates</label>
                   <div className="space-y-2">

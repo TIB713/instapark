@@ -92,6 +92,7 @@ function App() {
           <Route path="/provider/events/:eid" element={<RequireOwnerAuth><OwnerEventDetail /></RequireOwnerAuth>} />
           <Route path="/provider/cars" element={<RequireOwnerAuth><OwnerCars /></RequireOwnerAuth>} />
           <Route path="/provider/cars/:plate" element={<RequireOwnerAuth><OwnerCarDetail /></RequireOwnerAuth>} />
+          <Route path="/provider/cars/id/:carId" element={<RequireOwnerAuth><OwnerCarDetail /></RequireOwnerAuth>} />
 
           <Route path="/provider/incidents" element={<RequireOwnerAuth><OwnerIncidents /></RequireOwnerAuth>} />
           <Route path="/provider/team" element={<RequireOwnerAuth><OwnerTeam /></RequireOwnerAuth>} />
@@ -117,6 +118,7 @@ function App() {
           <Route path="/superadmin/events/:eid" element={<RequireAuth><EventDetail /></RequireAuth>} />
           <Route path="/superadmin/cars" element={<RequireAuth><Cars /></RequireAuth>} />
           <Route path="/superadmin/cars/:plate" element={<RequireAuth><CarDetail /></RequireAuth>} />
+          <Route path="/superadmin/cars/id/:carId" element={<RequireAuth><CarDetail /></RequireAuth>} />
           <Route path="/superadmin/live-monitor" element={<RequireAuth><LiveMonitor /></RequireAuth>} />
           <Route path="/superadmin/settings" element={<RequireAuth><Settings /></RequireAuth>} />
           <Route path="/superadmin" element={<Navigate to="/superadmin/dashboard" replace />} />

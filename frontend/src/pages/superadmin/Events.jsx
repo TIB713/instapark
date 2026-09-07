@@ -186,7 +186,7 @@ export default function Events() {
                     </span>
                     {openDropdown === 'status' && (
                       <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg p-1 min-w-[140px] font-normal normal-case">
-                        {["all", "active", "closed"].map(opt => (
+                        {["all", "active", "upcoming", "closed"].map(opt => (
                           <div key={opt} onClick={() => { setParams(opt === "all" ? {} : { filter: opt }); setOpenDropdown(null); }} className="px-3 py-2 text-sm rounded-lg cursor-pointer hover:bg-gray-50 flex items-center gap-2 capitalize">
                             {filter === opt ? <div className="w-2 h-2 rounded-full bg-[#1A3C6E]" /> : <div className="w-2 h-2" />}
                             {opt}
@@ -207,7 +207,11 @@ export default function Events() {
                     <td className="px-5 py-3 text-gray-600">{e.date}</td>
                     <td className="px-5 py-3 text-gray-600 hidden sm:table-cell">{e.venue}</td>
                     <td className="px-5 py-3">
-                      {e.status === "active" ? (
+                      {e.status === "upcoming" ? (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 inline-flex items-center gap-1">
+                          Upcoming
+                        </span>
+                      ) : e.status === "active" ? (
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 inline-flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block pulse-dot" />
                           Active

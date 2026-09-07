@@ -189,11 +189,19 @@ export default function OwnerCars() {
               </thead> 
               <tbody> 
                 {filtered.map(r => ( 
-                  <tr key={r.plate} 
-                    onClick={() => nav(`/provider/cars/${encodeURIComponent(r.plate)}`)}
-                    className="border-t border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"> 
+                  <tr key={r.car_id || r.plate} 
+                    onClick={() => nav(r.has_plate_issue ? `/provider/cars/id/${r.car_id}` : `/provider/cars/${encodeURIComponent(r.plate)}`)} 
+                    className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"> 
                     <td className="px-5 py-3"> 
-                      <span className="font-mono font-bold text-[#0F2044] text-base tracking-wider">{r.plate}</span> 
+                      <span className="font-mono font-bold text-[#0F2044] text-base tracking-wider">
+                        {r.plate || <span className="italic text-gray-400 font-normal">No Plate</span>}
+                      </span>
+                      {r.has_plate_issue && r.plate && (
+                        <span className="ml-2 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">TC</span>
+                      )}
+                      {r.has_plate_issue && !r.plate && (
+                        <span className="ml-2 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">No Plate</span>
+                      )}
                     </td> 
                     <td className="px-5 py-3 text-gray-600 hidden sm:table-cell">{r.make} / {r.color}</td> 
                     <td className="px-5 py-3"> 

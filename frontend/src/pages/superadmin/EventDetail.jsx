@@ -69,8 +69,7 @@ export default function EventDetail() {
   const [editForm, setEditForm] = useState({
     name: "", venue: "", date: "", end_date: "",
     start_time: "", end_time: "", max_cars: "", gate_timer_minutes: "",
-    key_hook_start: 1, key_hook_end: 50, zones: [], gates: [],
-    allow_instant_park: false
+    key_hook_start: 1, key_hook_end: 50, zones: [], gates: []
   });
   const [editErrors, setEditErrors] = useState({});
 
@@ -194,8 +193,7 @@ export default function EventDetail() {
         key_hook_start: e.key_hook_start || 1,
         key_hook_end: e.key_hook_end || (e.key_hooks || 50),
         zones: e.zones || [],
-        gates: e.gates ? e.gates.join(", ") : "",
-        allow_instant_park: !!e.allow_instant_park
+        gates: e.gates ? e.gates.join(", ") : ""
       });
     } catch (err) {
       toast.error("Failed to load event details");
@@ -296,8 +294,7 @@ export default function EventDetail() {
           start_time: editForm.start_time,
           end_time: editForm.end_time,
           gates: parsedGates,
-          gate_timer_minutes: parseInt(editForm.gate_timer_minutes) || 5,
-          allow_instant_park: editForm.allow_instant_park
+          gate_timer_minutes: parseInt(editForm.gate_timer_minutes) || 5
         };
       } else {
         body = {
@@ -408,7 +405,12 @@ export default function EventDetail() {
   };
 
   const handleCloseEvent = async () => {
-    if (!window.confirm("Are you sure you want to close this event? This cannot be undone.")) return;
+    const activeCars = (event.currently_parked || 0) + (event.pending_retrievals || 0);
+    const msg = activeCars > 0
+      ? `${activeCars} vehicle(s) haven't been retrieved yet — close anyway?`
+      : "Are you sure you want to close this event? This cannot be undone.";
+
+    if (!window.confirm(msg)) return;
     try {
       await api.post(`/events/${eid}/close`);
       toast.success("Event closed successfully");
@@ -418,38 +420,40 @@ export default function EventDetail() {
     }
   };
 
+  const handleActivateEvent = async () => {
+    if (!window.confirm("Activate this event now, ahead of its scheduled start time?")) return;
+    try {
+      await api.post(`/events/${eid}/activate`);
+      toast.success("Event activated");
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to activate event");
+    }
+  };
+
+  const activeCarsCount = cars.filter(c => !["DELIVERED", "CANCELLED", "PRE_REGISTERED"].includes(c.status)).length;
+
+  const handleMarkAllDelivered = async () => {
+    const msg = `This will force-mark all ${activeCarsCount} active car(s) in this event as DELIVERED right now, releasing their QR cards and parking slots. Use this only if guests/drivers already took the cars directly and retrieval requests can't be run. This cannot be undone. Continue?`;
+    if (!window.confirm(msg)) return;
+    try {
+      const { data } = await api.patch(`/superadmin/events/${eid}/cars/mark-all-delivered`);
+      toast.success(`${data.updated_count} car(s) marked as delivered`);
+      load();
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Failed to mark all cars delivered");
+    }
+  };
+
+
   const generateCSV = async () => {
     try {
-      const { data } = await api.get(`/events/${eid}/report`);
-      const headers = [
-        "Plate", "Make", "Color", "Status", "Gate", "Zone", "Slot",
-        "Key Tag", "Guest Name", "Guest Phone", "Check-in Time",
-        "Parked At", "Delivered At", "Duration (min)",
-        "Retrieval Time (min)", "Check-in Driver", "Parked Driver",
-        "Retrieval Driver", "Platform Rating", "Notes",
-        "Pre-registered", "Walk-in", "Peak Hour", "Still Parked"
-      ].join(",");
-      const rows = data.cars.map(c =>
-        [
-          c.plate, c.make, c.color, c.status, c.gate,
-          c.zone, c.slot, c.key_tag, c.guest_name,
-          c.guest_phone, c.check_in_time, c.parked_at,
-          c.delivered_at, c.duration_minutes,
-          c.retrieval_minutes, c.check_in_driver,
-          c.parked_driver, c.retrieval_driver, c.rating,
-          `"${(c.notes || "").replace(/"/g, "'")}"`,
-          data.summary.pre_registered || 0,
-          data.summary.walk_in || 0,
-          data.summary.peak_hour || "—",
-          data.summary.still_parked || 0,
-        ].join(",")
-      );
-      const csv = [headers, ...rows].join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
+      const res = await api.get(`/events/${eid}/report.csv`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${data.event.name.replace(/\s+/g, "_")}_report.csv`;
+      a.download = `${event.name.replace(/\s+/g, "_")}_report.csv`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success("CSV downloaded");
@@ -462,219 +466,9 @@ export default function EventDetail() {
 
   const generatePDF = async () => {
     try {
-      const { data } = await api.get(`/events/${eid}/report`);
-      const e = data.event;
-      const s = data.summary;
-
-      const rows = data.cars.map(c => `
-        <tr style="border-bottom:1px solid #f3f4f6;">
-          <td style="padding:8px 10px;font-weight:700;">
-            ${c.plate}
-          </td>
-          <td style="padding:8px 10px;">
-            ${c.color} ${c.make}
-          </td>
-          <td style="padding:8px 10px;">${c.status}</td>
-          <td style="padding:8px 10px;">
-            ${c.check_in_driver || "—"}
-          </td>
-          <td style="padding:8px 10px;">
-            ${c.retrieval_driver || "—"}
-          </td>
-          <td style="padding:8px 10px;">
-            ${c.duration_minutes
-          ? c.duration_minutes + " min" : "—"}
-          </td>
-          <td style="padding:8px 10px;">
-            ${c.rating ? "⭐".repeat(c.rating) : "—"}
-          </td>
-          <td style="padding:8px 10px;font-size:11px;">
-            ${c.notes || "—"}
-          </td>
-        </tr>`
-      ).join("");
-
-      const driverRows = data.drivers.map(d => `
-        <tr style="border-bottom:1px solid #f3f4f6;">
-          <td style="padding:8px 10px;font-weight:700;">
-            ${d.name}
-          </td>
-          <td style="padding:8px 10px;">${d.employee_id}</td>
-          <td style="padding:8px 10px;text-align:center;">
-            ${d.checkins}
-          </td>
-          <td style="padding:8px 10px;text-align:center;">
-            ${d.retrievals}
-          </td>
-          <td style="padding:8px 10px;text-align:center;
-            color:${d.incidents > 0 ? "#ef4444" : "#6b7280"};">
-            ${d.incidents}
-          </td>
-        </tr>`
-      ).join("");
-
-      const incidentRows = incidents.length > 0
-        ? incidents.map(i => `
-          <tr style="border-bottom:1px solid #f3f4f6;">
-            <td style="padding:8px 10px;font-weight:700;">
-              ${i.plate}
-            </td>
-            <td style="padding:8px 10px;">
-              ${i.reported_by || "—"}
-            </td>
-            <td style="padding:8px 10px;">${i.description}</td>
-            <td style="padding:8px 10px;font-size:11px;
-              color:#6b7280;">
-              ${fmtDateTimeFull(i.created_at)}
-            </td>
-          </tr>`
-        ).join("")
-        : `<tr><td colspan="4" style="padding:16px;
-            text-align:center;color:#9ca3af;">
-            No incidents reported
-          </td></tr>`;
-
-      const html = `<!DOCTYPE html><html><head>
-        <meta charset="UTF-8">
-        <title>${e.name} — Event Report</title>
-        <style>
-          *{margin:0;padding:0;box-sizing:border-box;}
-          body{font-family:Arial,sans-serif;color:#111827;}
-          .header{background:#7C3AED;color:white;
-            padding:32px 40px;}
-          .header h1{font-size:28px;font-weight:900;}
-          .header p{opacity:0.8;margin-top:4px;font-size:14px;}
-          .section{padding:28px 40px;
-            border-bottom:1px solid #f3f4f6;}
-          .section h2{font-size:13px;font-weight:800;
-            color:#7C3AED;letter-spacing:3px;margin-bottom:16px;}
-          .stats-grid{display:grid;
-            grid-template-columns:repeat(4,1fr);gap:16px;}
-          .stat-card{background:#f9fafb;border-radius:12px;
-            padding:16px;text-align:center;}
-          .stat-value{font-size:28px;font-weight:900;
-            color:#111827;}
-          .stat-label{font-size:11px;color:#6b7280;
-            margin-top:4px;text-transform:uppercase;
-            letter-spacing:1px;}
-          table{width:100%;border-collapse:collapse;
-            font-size:13px;}
-          thead tr{background:#f9fafb;}
-          th{padding:10px;text-align:left;font-size:11px;
-            text-transform:uppercase;letter-spacing:1px;
-            color:#6b7280;font-weight:700;}
-          .footer{padding:20px 40px;text-align:center;
-            color:#9ca3af;font-size:12px;}
-        </style></head><body>
-        <div class="header">
-          <h1>${e.name}</h1>
-          <p>${e.date}
-            ${e.start_time
-          ? "· " + e.start_time + " to " + e.end_time
-          : ""}
-            ${e.venue ? "· " + e.venue : ""}
-          </p>
-          <p style="margin-top:8px;font-size:12px;opacity:0.6;">
-            Generated on
-            ${fmtDateTimeFull(new Date().toISOString())}
-          </p>
-        </div>
-        <div class="section">
-          <h2>EVENT SUMMARY</h2>
-          <div class="stats-grid">
-            <div class="stat-card">
-              <div class="stat-value">${s.total_cars}</div>
-              <div class="stat-label">Total Cars</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">${s.pre_registered || 0}</div>
-              <div class="stat-label">Pre-Registered</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">${s.walk_in || 0}</div>
-              <div class="stat-label">Walk-in</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">${s.delivered}</div>
-              <div class="stat-label">Delivered</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">${s.still_parked || 0}</div>
-              <div class="stat-label">Still Parked</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">
-                ${s.avg_retrieval_minutes}m
-              </div>
-              <div class="stat-label">Avg Retrieval</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">
-                ${s.platform_avg_rating > 0
-          ? s.platform_avg_rating + "★" : "—"}
-              </div>
-              <div class="stat-label">Platform Rating</div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-value">
-                ${s.avg_duration_minutes}m
-              </div>
-              <div class="stat-label">Avg Duration</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">${s.total_drivers}</div>
-              <div class="stat-label">Drivers</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">${s.active}</div>
-              <div class="stat-label">Still Active</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">${s.peak_hour || "—"}</div>
-              <div class="stat-label">Peak Hour</div>
-            </div>
-            <div class="stat-card"
-              style="color:${s.total_incidents > 0
-          ? "#ef4444" : "inherit"}">
-              <div class="stat-value">${s.total_incidents}</div>
-              <div class="stat-label">Incidents</div>
-            </div>
-          </div>
-        </div>
-        <div class="section">
-          <h2>DRIVER PERFORMANCE</h2>
-          <table><thead><tr>
-            <th>Driver</th><th>Employee ID</th>
-            <th>Check-ins</th><th>Retrievals</th>
-            <th>Incidents</th>
-          </tr></thead>
-          <tbody>${driverRows}</tbody></table>
-        </div>
-        <div class="section">
-          <h2>INCIDENT REPORTS</h2>
-          <table><thead><tr>
-            <th>Plate</th><th>Driver</th>
-            <th>Description</th><th>Time</th>
-          </tr></thead>
-          <tbody>${incidentRows}</tbody></table>
-        </div>
-        <div class="section">
-          <h2>CAR DETAILS (${s.total_cars} vehicles)</h2>
-          <table><thead><tr>
-            <th>Plate</th><th>Vehicle</th><th>Status</th>
-            <th>Check-in By</th><th>Retrieved By</th>
-            <th>Duration</th><th>Rating</th><th>Notes</th>
-          </tr></thead>
-          <tbody>${rows}</tbody></table>
-        </div>
-        <div class="footer">
-          InstaPark — Smart Valet Operations · ${e.name}
-        </div>
-      </body></html>`;
-
+      const res = await api.get(`/events/${eid}/report.html`, { responseType: "text" });
       const w = window.open("", "_blank");
-      w.document.write(html);
+      w.document.write(res.data);
       w.document.close();
       setTimeout(() => w.print(), 500);
       toast.success("PDF ready to print/save");
@@ -777,7 +571,10 @@ export default function EventDetail() {
 
   const filteredCars = useMemo(() =>
     cars.filter(c => {
-      const matchQ = !carSearch || `${c.plate} ${c.make} ${c.color} ${c.check_in_driver_name} ${c.retrieval_driver_name}`.toLowerCase().includes(carSearch.toLowerCase());
+      const q = carSearch.toLowerCase();
+      const matchText = !carSearch || `${c.plate} ${c.make} ${c.color} ${c.check_in_driver_name} ${c.retrieval_driver_name}`.toLowerCase().includes(q);
+      const matchCode = !!carSearch && c.status !== "DELIVERED" && c.card_code && c.card_code.toLowerCase().includes(q);
+      const matchQ = !carSearch || matchText || matchCode;
       const matchStatus = carStatusFilter === "all" || c.status === carStatusFilter;
       return matchQ && matchStatus;
     }), [cars, carSearch, carStatusFilter]);
@@ -856,7 +653,11 @@ export default function EventDetail() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <h1 className="font-heading text-2xl font-bold text-white truncate">{event.name}</h1>
-                  {event.status === "active" ? (
+                  {event.status === "upcoming" ? (
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center gap-1.5">
+                      Upcoming
+                    </span>
+                  ) : event.status === "active" ? (
                     <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot" /> Active
                     </span>
@@ -924,6 +725,14 @@ export default function EventDetail() {
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition"
                   >
                     <X className="w-4 h-4" /> Close Event
+                  </button>
+                )}
+                {event.status === "upcoming" && (
+                  <button
+                    onClick={handleActivateEvent}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 transition"
+                  >
+                    Activate
                   </button>
                 )}
               </div>
@@ -1101,14 +910,7 @@ export default function EventDetail() {
                           {editErrors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.gate_timer_minutes}</p>}
                           <p className="text-xs text-gray-400 mt-1">How long the guest has to reach the gate before the car is sent back to parking.</p>
                         </div>
-                        <div className="flex items-center gap-2 mt-4">
-                          <input type="checkbox" id="edit_allow_instant_park" checked={editForm.allow_instant_park}
-                            onChange={(e) => setEditForm({ ...editForm, allow_instant_park: e.target.checked })}
-                            className="w-4 h-4 text-[#1D4ED8] bg-gray-100 border-gray-300 rounded focus:ring-[#1D4ED8]" />
-                          <label htmlFor="edit_allow_instant_park" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
-                            Allow Instant Park for this event
-                          </label>
-                        </div>
+                        
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Key Hooks From</label>
@@ -1490,9 +1292,9 @@ export default function EventDetail() {
                       <td className="px-6 py-4">
                         {inc.status ? (
                           <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${inc.status === "OPEN" ? "bg-red-100 text-red-700" :
-                              inc.status === "IN_REVIEW" ? "bg-amber-100 text-amber-700" :
-                                inc.status === "RESOLVED" ? "bg-emerald-100 text-emerald-700" :
-                                  "bg-gray-100 text-gray-600"
+                            inc.status === "IN_REVIEW" ? "bg-amber-100 text-amber-700" :
+                              inc.status === "RESOLVED" ? "bg-emerald-100 text-emerald-700" :
+                                "bg-gray-100 text-gray-600"
                             }`}>
                             {inc.status}
                           </span>
@@ -1704,6 +1506,23 @@ export default function EventDetail() {
         {activeTab === "cars" && (<>
           {/* Cars Log Section */}
           <div>
+            {activeCarsCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4 p-4 rounded-2xl bg-amber-50 border border-amber-200">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-900">{activeCarsCount} car(s) still active</p>
+                    <p className="text-xs text-amber-700 mt-0.5">If keys were handed to guests directly and retrieval can't be run, force-close them all here.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleMarkAllDelivered}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold whitespace-nowrap transition-colors"
+                >
+                  Mark All Cars Delivered
+                </button>
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="font-heading text-xl font-bold text-[#0F2044]">Car Activity Log</h2>
               <div className="relative w-full sm:w-64">
@@ -1711,7 +1530,7 @@ export default function EventDetail() {
                 <input
                   value={carSearch}
                   onChange={(e) => setCarSearch(e.target.value)}
-                  placeholder="Search plate, make, color, driver…"
+                  placeholder="Search plate, code, make, color, driver…"
                   className="w-full pl-9 pr-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-[#1A3C6E]"
                 />
               </div>
@@ -1731,7 +1550,7 @@ export default function EventDetail() {
                   <table className="w-full text-sm min-w-[600px]">
                     <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-semibold">
                       <tr>
-                        <th className="text-left px-5 py-3">Plate</th>
+                        <th className="text-left px-5 py-3">Plate</th><th className="text-left px-5 py-3">Code</th>
                         <th className="text-left px-5 py-3">Make/Color</th>
                         <th className="text-left px-5 py-3">Gate</th>
                         <th className="text-left px-5 py-3">Zone/Slot</th>
@@ -1765,12 +1584,15 @@ export default function EventDetail() {
                         <>
                           <tr
                             key={c.id}
-                            onClick={() => nav(`/superadmin/cars/${encodeURIComponent(c.plate)}`)}
+                            onClick={() => nav(c.has_plate_issue ? `/superadmin/cars/id/${c.id}` : `/superadmin/cars/${encodeURIComponent(c.plate)}`)}
                             className="border-t border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
                           >
                             <td className="px-5 py-3 font-bold uppercase">
                               <div className="flex items-center gap-2">
-                                {c.plate}
+                                {c.plate || <span className="italic text-gray-400 font-normal text-xs">No Plate</span>}
+                                {c.has_plate_issue && c.plate && (
+                                  <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">TC</span>
+                                )}
                                 {c.carried_forward && (
                                   <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
                                     Overnight
@@ -1778,6 +1600,7 @@ export default function EventDetail() {
                                 )}
                               </div>
                             </td>
+                            <td className="px-5 py-3 font-mono text-gray-600">{c.card_code || "—"}</td>
                             <td className="px-5 py-3 text-gray-600">{c.make} / {c.color}</td>
                             <td className="px-5 py-3 text-gray-500">{c.gate || "—"}</td>
                             <td className="px-5 py-3 font-medium">{c.zone ? `${c.zone} / ${c.slot}` : "—"}</td>
@@ -1793,33 +1616,33 @@ export default function EventDetail() {
                               {c.delivered_at ? fmtTime(c.delivered_at) : "—"}
                             </td>
                             <td className="px-5 py-3">
-                                <div className="flex gap-2">
-                                  {c.guest_phone ? (
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleResendSms(c); }}
-                                      title={`Resend SMS to ${c.guest_phone}`}
-                                      className="p-1.5 rounded-lg text-violet-600 hover:bg-violet-50 transition"
-                                    >
-                                      <MessageSquare className="w-4 h-4" />
-                                    </button>
-                                  ) : (
-                                    <span title="No phone number on file" className="inline-flex p-1.5 rounded-lg text-gray-300 cursor-not-allowed">
-                                      <MessageSquare className="w-4 h-4" />
-                                    </span>
-                                  )}
+                              <div className="flex gap-2">
+                                {c.guest_phone ? (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); setQrModalCar(c); }}
-                                    className="p-1.5 text-gray-400 hover:text-[#1A3C6E] hover:bg-gray-100 rounded-lg transition-colors"
-                                    title="View QR"
+                                    onClick={(e) => { e.stopPropagation(); handleResendSms(c); }}
+                                    title={`Resend SMS to ${c.guest_phone}`}
+                                    className="p-1.5 rounded-lg text-violet-600 hover:bg-violet-50 transition"
                                   >
-                                    <QrCode className="w-4 h-4" />
+                                    <MessageSquare className="w-4 h-4" />
                                   </button>
-                                </div>
-                              </td>
+                                ) : (
+                                  <span title="No phone number on file" className="inline-flex p-1.5 rounded-lg text-gray-300 cursor-not-allowed">
+                                    <MessageSquare className="w-4 h-4" />
+                                  </span>
+                                )}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setQrModalCar(c); }}
+                                  className="p-1.5 text-gray-400 hover:text-[#1A3C6E] hover:bg-gray-100 rounded-lg transition-colors"
+                                  title="View QR"
+                                >
+                                  <QrCode className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         </>
                       ))}
-                      {filteredCars.length === 0 && <tr><td colSpan="10" className="p-8 text-center text-gray-400">{carSearch ? "No cars match your search" : "No car activity recorded"}</td></tr>}
+                      {filteredCars.length === 0 && <tr><td colSpan="11" className="p-8 text-center text-gray-400">{carSearch ? "No cars match your search" : "No car activity recorded"}</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -1864,9 +1687,11 @@ export default function EventDetail() {
                         rowClasses += "bg-white hover:bg-[#F4F6FA] transition-colors duration-[2500ms]";
                       }
                       return (
-                        <tr key={c.car_id} onClick={() => nav(`/superadmin/cars/${c.car_number}`)}
+                        <tr key={c.car_id} onClick={() => nav(c.has_plate_issue ? `/superadmin/cars/id/${c.car_id}` : `/superadmin/cars/${c.car_number}`)}
                           className={rowClasses}>
-                          <td className="px-6 py-4 font-mono font-black text-[#0F2044]">{c.car_number || "—"}</td>
+                          <td className="px-6 py-4 font-mono font-black text-[#0F2044]">
+                            {c.car_number || (c.has_plate_issue ? "No Plate" : "—")}
+                          </td>
                           <td className="px-6 py-4 text-[#0F2044] font-medium">{c.guest_name || "—"}</td>
                           <td className="px-6 py-4">
                             <StatusBadge status={c.status} />
@@ -1942,4 +1767,3 @@ export default function EventDetail() {
 
   );
 }
-

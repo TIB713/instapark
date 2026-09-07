@@ -104,7 +104,6 @@ export default function ValetProviderHotelDetail() {
     state: "",
     total_valet_slots: "",
     gate_timer_minutes: "",
-    allow_instant_park: false,
     contact_person_name: "",
     contact_person_phone: "",
     contact_person_email: "",
@@ -123,7 +122,7 @@ export default function ValetProviderHotelDetail() {
     name: "", date: "", end_date: "", venue: "", max_cars: 50,
     gates: ["Main Gate"], start_time: "", end_time: "",
     zones: [{ name: "A", slots: 20 }],
-    host_name: "", host_email: "", allow_instant_park: false
+    host_name: "", host_email: ""
   });
   const totalEventSlots = eventForm.zones.reduce((sum, z) => sum + (parseInt(z.slots) || 0), 0);
 
@@ -207,7 +206,7 @@ export default function ValetProviderHotelDetail() {
         toast.success("Special event created!");
       }
       setShowEventModal(false);
-      setEventForm({ name: "", date: "", end_date: "", venue: "", max_cars: 50, gates: ["Main Gate"], start_time: "", end_time: "", zones: [{ name: "A", slots: 20 }], host_name: "", host_email: "", allow_instant_park: false });
+      setEventForm({ name: "", date: "", end_date: "", venue: "", max_cars: 50, gates: ["Main Gate"], start_time: "", end_time: "", zones: [{ name: "A", slots: 20 }], host_name: "", host_email: "" });
       loadData();
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to create event");
@@ -232,7 +231,6 @@ export default function ValetProviderHotelDetail() {
         state: h.state || "",
         total_valet_slots: h.total_valet_slots || "",
         gate_timer_minutes: h.gate_timer_minutes || "",
-        allow_instant_park: !!h.allow_instant_park,
         contact_person_name: h.contact_person_name || "",
         contact_person_phone: h.contact_person_phone || "",
         contact_person_email: h.contact_person_email || "",
@@ -448,7 +446,6 @@ export default function ValetProviderHotelDetail() {
         state: editForm.state,
         total_valet_slots: parseInt(editForm.total_valet_slots),
         gate_timer_minutes: editForm.gate_timer_minutes ? parseInt(editForm.gate_timer_minutes) : null,
-        allow_instant_park: editForm.allow_instant_park,
         contact_person_name: editForm.contact_person_name,
         contact_person_phone: editForm.contact_person_phone,
         contact_person_email: editForm.contact_person_email || null,
@@ -991,14 +988,7 @@ export default function ValetProviderHotelDetail() {
                     <p className="text-xs text-gray-400 mt-1">Default timer for this hotel's daily and special events.</p>
                   </div>
 
-                  <div className="flex items-center gap-2 mb-4">
-                    <input type="checkbox" id="edit_allow_instant_park_vp" checked={editForm.allow_instant_park}
-                           onChange={(e) => setEditForm(prev => ({ ...prev, allow_instant_park: e.target.checked }))}
-                           className="w-4 h-4 rounded text-[#1D4ED8] focus:ring-[#1D4ED8]" />
-                    <label htmlFor="edit_allow_instant_park_vp" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
-                      Allow Instant Park for this hotel's events
-                    </label>
-                  </div>
+                  
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Contact Person Name</label>
@@ -1517,9 +1507,14 @@ export default function ValetProviderHotelDetail() {
                       <tr><td colSpan="7" className="text-center text-gray-400 py-12">No cars found</td></tr>
                     )}
                     {paginatedHotelCars.map(c => (
-                      <tr key={c.plate} onClick={() => nav(`/superadmin/cars/${c.plate}`)}
+                      <tr key={c.car_id || c.plate} onClick={() => nav(c.has_plate_issue ? `/superadmin/cars/id/${c.car_id}` : `/superadmin/cars/${c.plate}`)}
                         className="border-t border-gray-100 hover:bg-[#F4F6FA] cursor-pointer transition-colors">
-                        <td className="px-6 py-4 font-mono font-black text-[#0F2044]">{c.plate}</td>
+                        <td className="px-6 py-4 font-mono font-black text-[#0F2044]">
+                          {c.plate || <span className="italic text-gray-400 font-normal text-xs">No Plate</span>}
+                          {c.has_plate_issue && c.plate && (
+                            <span className="ml-2 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">TC</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-gray-600">{c.make || "—"}</td>
                         <td className="px-6 py-4 text-gray-600">{c.color || "—"}</td>
                         <td className="px-6 py-4 font-bold text-[#1A3C6E]">{c.total_visits}</td>
@@ -1854,14 +1849,7 @@ export default function ValetProviderHotelDetail() {
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.max_cars ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
 { eventErrors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.max_cars}</p> }
                 </div>
-                <div className="flex items-center gap-2 mt-4 sm:col-span-2">
-                  <input type="checkbox" id="allow_instant_park_event_vp" checked={eventForm.allow_instant_park}
-                         onChange={(e) => setEventForm(prev => ({ ...prev, allow_instant_park: e.target.checked }))}
-                         className="w-4 h-4 text-[#1D4ED8] bg-gray-100 border-gray-300 rounded focus:ring-[#1D4ED8]" />
-                  <label htmlFor="allow_instant_park_event_vp" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
-                    Allow Instant Park for this event
-                  </label>
-                </div>
+                
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gates</label>
                   <div className="space-y-2">

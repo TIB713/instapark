@@ -1,8 +1,10 @@
+import QRCode from "qrcode";
+import { Pagination } from "../../components/ui/Pagination";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import SuperLayout from "@/components/layout/SuperLayout";
 import { State, City } from "country-state-city";
-import { api } from "@/lib/api";
+import { api, WS_BASE } from "@/lib/api";
 import { fmtDate, fmtDateTimeFull } from "@/lib/time";
 import { toast } from "sonner";
 import { ArrowLeft, Building2, MapPin, Phone, Mail, Clock, Car, Star, Calendar, Edit2, Save, X, Camera, Plus, Trash2, User, Users, ShieldCheck, CheckCircle2, Check, QrCode, Copy, Download, Upload, Search, ChevronDown, Radio, AlertTriangle, CheckCircle } from "lucide-react";
@@ -26,11 +28,16 @@ export default function HotelDetail() {
   const scrollToFirstEventError = useScrollToFirstError(["name", "host_email", "date", "end_date", "venue", "start_time", "end_time", "max_cars"], eventFieldRefs);
 
   const driverFieldRefs = useRef({});
-  const scrollToFirstDriverError = useScrollToFirstError(["name", "phone", "pin", "email", "gender", "pan_number", "bank_account_number", "bank_ifsc", "driving_license_number", "aadhar_number", "licensePhoto", "drvAadharPhoto"], driverFieldRefs);
+  const scrollToFirstDriverError = useScrollToFirstError(["name", "phone", "email", "gender", "pan_number", "bank_account_number", "bank_ifsc", "driving_license_number", "aadhar_number", "licensePhoto", "drvAadharPhoto"], driverFieldRefs);
 
   const supervisorFieldRefs = useRef({});
   const scrollToFirstSupervisorError = useScrollToFirstError(["name", "phone", "email", "gender", "password", "confirmPassword", "pan_number", "bank_account_number", "bank_ifsc", "aadhar_number", "supAadharPhoto"], supervisorFieldRefs);
   const [hotel, setHotel] = useState(null);
+  const [hotelModal, setHotelModal] = useState(false);
+  const [driverModal, setDriverModal] = useState(false);
+  const [supervisorModal, setSupervisorModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showHotelQRModal, setShowHotelQRModal] = useState(false);
@@ -40,8 +47,8 @@ export default function HotelDetail() {
   const [supervisors, setSupervisors] = useState([]);
   const [driverStatusFilter, setDriverStatusFilter] = useState("All");
   const [supervisorStatusFilter, setSupervisorStatusFilter] = useState("All");
-  const [driverModal, setDriverModal] = useState(false);
-  const [driverForm, setDriverForm] = useState({ name: "", phone: "", pin: "", email: "", gender: "", pan_number: "", bank_account_number: "", bank_ifsc: "", driving_license_number: "", aadhar_number: "", driver_photo: "", license_photo: "" });
+  // const [driverModal, setDriverModal] = useState(false);
+  const [driverForm, setDriverForm] = useState({ name: "", phone: "", email: "", gender: "", pan_number: "", bank_account_number: "", bank_ifsc: "", driving_license_number: "", aadhar_number: "", driver_photo: "", license_photo: "" });
   const [driverErrors, setDriverErrors] = useState({});
   const [savingDriver, setSavingDriver] = useState(false);
   const [driverPhotoPreview, setDriverPhotoPreview] = useState(null);
@@ -49,7 +56,7 @@ export default function HotelDetail() {
   const [aadharPhotoPreview, setAadharPhotoPreview] = useState(null);
   const [supervisorPhotoPreview, setSupervisorPhotoPreview] = useState(null);
 
-  const [supervisorModal, setSupervisorModal] = useState(false);
+  // const [supervisorModal, setSupervisorModal] = useState(false);
   const [supervisorForm, setSupervisorForm] = useState({ name: "", email: "", phone: "", password: "", confirmPassword: "", gender: "", pan_number: "", bank_account_number: "", bank_ifsc: "", aadhar_number: "", supervisor_photo: "" });
   const [supervisorErrors, setSupervisorErrors] = useState({});
   const [savingSupervisor, setSavingSupervisor] = useState(false);
@@ -62,11 +69,124 @@ export default function HotelDetail() {
   const [supervisorSearch, setSupervisorSearch] = useState("");
   const [activeTab, setActiveTab] = useState("info");
 
+  const [qrCards, setQrCards] = useState([]);
+  const [loadingQrCards, setLoadingQrCards] = useState(false);
+  const [qrCardSearch, setQrCardSearch] = useState("");
+  const [qrIncidentHistory, setQrIncidentHistory] = useState([]);
+  const [loadingQrHistory, setLoadingQrHistory] = useState(false);
+  const [selectedIncidentCard, setSelectedIncidentCard] = useState(null);
+  const [zoomedCard, setZoomedCard] = useState(null);
+  const [qrPage, setQrPage] = useState(1);
+  const QR_PAGE_SIZE = 24;
+  const [qrDateFilter, setQrDateFilter] = useState("all");
+  const [hotelProvider, setHotelProvider] = useState(null);
+
+  useEffect(() => {
+    setQrPage(1);
+  }, [qrCardSearch, qrDateFilter, activeTab]);
+
+  const uniqueQrDates = useMemo(() => {
+    const dates = new Set();
+    qrCards.forEach(c => { if (c.created_at) dates.add(c.created_at.substring(0, 10)); });
+    return Array.from(dates).sort().reverse();
+  }, [qrCards]);
+
+  const filteredQrCards = useMemo(() => {
+    let filtered = qrCards;
+    if (qrDateFilter !== "all") {
+      filtered = filtered.filter(c => c.created_at && c.created_at.substring(0, 10) === qrDateFilter);
+    }
+    return filtered;
+  }, [qrCards, qrDateFilter]);
+
+  const paginatedQrCards = filteredQrCards.slice((qrPage - 1) * QR_PAGE_SIZE, qrPage * QR_PAGE_SIZE);
+
+  const downloadCardPng = async (card) => {
+    const dataUrl = await QRCode.toDataURL(
+      `${window.location.origin}/v/${card.qr_token}`,
+      { margin: 1, width: 512 }
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 620;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const img = new Image();
+    img.src = dataUrl;
+    await new Promise((resolve) => { img.onload = resolve; });
+    ctx.drawImage(img, 0, 0, 512, 512);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#000000";
+    ctx.font = "bold 32px sans-serif";
+    ctx.fillText(`#${card.key_tag_number}`, 256, 560);
+    ctx.fillStyle = "#555555";
+    ctx.font = "22px sans-serif";
+    ctx.fillText(`Code ${card.card_code}`, 256, 595);
+    const finalDataUrl = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = finalDataUrl;
+    a.download = `qr-card-${hotelProvider?.name?.replace(/\s+/g, "_") || "hotel"}-tag${card.key_tag_number}-code${card.card_code}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   const [driversPage, setDriversPage] = useState(1);
   const [supervisorsPage, setSupervisorsPage] = useState(1);
 
   useEffect(() => { setDriversPage(1); }, [driverSearch, driverStatusFilter]);
   useEffect(() => { setSupervisorsPage(1); }, [supervisorSearch, supervisorStatusFilter]);
+
+  useEffect(() => {
+    if (activeTab === "qr_cards" && hotel?.provider_id) {
+      const timer = setTimeout(() => {
+        setLoadingQrCards(true);
+        api.get(`/providers/${hotel.provider_id}/qr-cards?search=${qrCardSearch}`)
+          .then(r => setQrCards(r.data?.cards || []))
+          .catch(() => toast.error("Failed to load QR cards"))
+          .finally(() => setLoadingQrCards(false));
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, qrCardSearch, hotel?.provider_id]);
+
+  useEffect(() => {
+    if (activeTab !== "qr_cards" || !hotel?.provider_id) return;
+    let ws, retryCount = 0, retryTimer;
+    const connect = () => {
+      const token = (api.defaults.headers.common.Authorization || "").replace("Bearer ", "") || localStorage.getItem("superadmin_token");
+      ws = new WebSocket(`${WS_BASE}/ws/provider/${hotel.provider_id}?token=${token}`);
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "qr_card_update" && msg.data?.id) {
+            setQrCards(prev => prev.map(c => c.id === msg.data.id ? { ...c, ...msg.data } : c));
+          }
+        } catch { }
+      };
+      ws.onclose = () => {
+        if (retryCount >= 5) return;
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+        retryCount++;
+        retryTimer = setTimeout(connect, delay);
+      };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    const poll = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        api.get(`/providers/${hotel.provider_id}/qr-cards?search=${qrCardSearch}`)
+          .then(r => setQrCards(r.data?.cards || []))
+          .catch(() => { });
+      }
+    }, 15000);
+    return () => {
+      clearTimeout(retryTimer);
+      clearInterval(poll);
+      ws?.close();
+    };
+  }, [activeTab, hotel?.provider_id, qrCardSearch]);
 
   const [eventTypeTab, setEventTypeTab] = useState("daily");
   const [triggeringDailyJob, setTriggeringDailyJob] = useState(false);
@@ -123,6 +243,10 @@ export default function HotelDetail() {
 
   // Hotel info edit mode
   const [editHotelOpen, setEditHotelOpen] = useState(false);
+  const [capacityEditOpen, setCapacityEditOpen] = useState(false);
+  const [capacityForm, setCapacityForm] = useState({ total_valet_slots: 0 });
+  const [capacityErrors, setCapacityErrors] = useState({});
+
   const [editForm, setEditForm] = useState({
     name: "",
     address: "",
@@ -130,7 +254,6 @@ export default function HotelDetail() {
     state: "",
     total_valet_slots: "",
     gate_timer_minutes: "",
-    allow_instant_park: false,
     contact_person_name: "",
     contact_person_phone: "",
     contact_person_email: "",
@@ -152,7 +275,7 @@ export default function HotelDetail() {
     name: "", date: "", end_date: "", venue: "", max_cars: 50,
     gates: ["Main Gate"], start_time: "", end_time: "",
     zones: [{ name: "A", slots: 20 }],
-    host_name: "", host_email: "", allow_instant_park: false
+    host_name: "", host_email: ""
   });
   const totalEventSlots = eventForm.zones.reduce((sum, z) => sum + (parseInt(z.slots) || 0), 0);
 
@@ -232,7 +355,7 @@ export default function HotelDetail() {
         toast.success("Special event created!");
       }
       setShowEventModal(false);
-      setEventForm({ name: "", date: "", end_date: "", venue: "", max_cars: 50, gates: ["Main Gate"], start_time: "", end_time: "", zones: [{ name: "A", slots: 20 }], host_name: "", host_email: "", allow_instant_park: false });
+      setEventForm({ name: "", date: "", end_date: "", venue: "", max_cars: 50, gates: ["Main Gate"], start_time: "", end_time: "", zones: [{ name: "A", slots: 20 }], host_name: "", host_email: "" });
       loadData();
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to create event");
@@ -255,9 +378,10 @@ export default function HotelDetail() {
         if (h.provider_id) {
           const resProvider = await api.get(`/providers/${h.provider_id}`);
           providerEmail = resProvider.data.email || "";
+          setHotelProvider(resProvider.data);
         }
       } catch {
-        // provider fetch failed — continue without it
+        // provider fetch failed - continue without it
       }
 
       // Initialize edit form
@@ -268,7 +392,6 @@ export default function HotelDetail() {
         state: h.state || "",
         total_valet_slots: h.total_valet_slots || "",
         gate_timer_minutes: h.gate_timer_minutes || "",
-        allow_instant_park: !!h.allow_instant_park,
         contact_person_name: h.contact_person_name || "",
         contact_person_phone: h.contact_person_phone || "",
         contact_person_email: h.contact_person_email || "",
@@ -506,7 +629,7 @@ export default function HotelDetail() {
     }
   };
 
-    const validateEdit = () => {
+  const validateEdit = () => {
     const errs = {};
     if (!editForm.name?.trim()) errs.name = "Hotel name cannot be empty";
     if (!editForm.address?.trim()) errs.address = "Address cannot be empty";
@@ -526,6 +649,27 @@ export default function HotelDetail() {
     return errs;
   };
 
+
+  const handleCapacityEdit = async (e) => {
+    e.preventDefault();
+    const val = parseInt(capacityForm.total_valet_slots);
+    if (!val || val < 1) {
+      setCapacityErrors({ total_valet_slots: "Must be at least 1" });
+      return;
+    }
+    try {
+      await Promise.all([
+        api.patch(`/hotels/${hotel.id}`, { total_valet_slots: val }),
+        api.patch(`/providers/${hotel.provider_id}`, { max_cars: val }),
+      ]);
+      toast.success("Valet capacity updated");
+      setCapacityEditOpen(false);
+      loadData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to update capacity");
+    }
+  };
+
   const handleSaveHotel = async (e) => {
     e.preventDefault();
     const errs = validateEdit();
@@ -542,7 +686,6 @@ export default function HotelDetail() {
         state: editForm.state,
         total_valet_slots: parseInt(editForm.total_valet_slots),
         gate_timer_minutes: editForm.gate_timer_minutes ? parseInt(editForm.gate_timer_minutes) : null,
-        allow_instant_park: editForm.allow_instant_park,
         contact_person_name: editForm.contact_person_name,
         contact_person_phone: editForm.contact_person_phone,
         contact_person_email: editForm.contact_person_email || null,
@@ -709,18 +852,16 @@ export default function HotelDetail() {
   };
   const closeDriverModal = () => {
     setDriverModal(false); setDriverErrors({});
-    setDriverForm({ name: "", phone: "", pin: "", email: "", gender: "", pan_number: "", bank_account_number: "", bank_ifsc: "", driving_license_number: "", aadhar_number: "", driver_photo: "", license_photo: "" });
+    setDriverForm({ name: "", phone: "", email: "", gender: "", pan_number: "", bank_account_number: "", bank_ifsc: "", driving_license_number: "", aadhar_number: "", driver_photo: "", license_photo: "" });
     setDriverPhotoPreview(null);
     setLicensePhotoPreview(null);
     setAadharPhotoPreview(null);
   };
-    const validateDriver = () => {
+  const validateDriver = () => {
     const errs = {};
     if (!driverForm.name?.trim()) errs.name = "Name is required";
     if (!driverForm.phone?.trim()) errs.phone = "Phone is required";
     else if (!/^\d{10}$/.test(driverForm.phone.replace(/\D/g, ""))) errs.phone = "Phone must be exactly 10 digits";
-    if (!driverForm.pin || driverForm.pin.length !== 4) errs.pin = "PIN must be exactly 4 digits";
-    else if (!/^\d{4}$/.test(driverForm.pin)) errs.pin = "PIN must contain digits only";
     if (!driverForm.email?.trim()) errs.email = "Email is required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(driverForm.email.trim())) errs.email = "Please enter a valid email address";
     if (!driverForm.gender) errs.gender = "Please select gender";
@@ -765,7 +906,7 @@ export default function HotelDetail() {
       }
       const payload = {
         provider_id: hotel.provider_id,
-        name: driverForm.name, phone: driverForm.phone, pin: driverForm.pin, email: driverForm.email, gender: driverForm.gender,
+        name: driverForm.name, phone: driverForm.phone, email: driverForm.email, gender: driverForm.gender,
         pan_number: driverForm.pan_number.trim(), bank_account_number: driverForm.bank_account_number.trim(), bank_ifsc: driverForm.bank_ifsc.trim().toUpperCase(),
         driving_license_number: driverForm.driving_license_number.trim().toUpperCase(), driver_photo: dUrl || null, driving_license_photo: lUrl || null,
         aadhar_number: driverForm.aadhar_number.trim(), aadhar_photo: aUrl || null
@@ -781,7 +922,7 @@ export default function HotelDetail() {
     }
   };
 
-    const validateSupervisor = () => {
+  const validateSupervisor = () => {
     const errs = {};
     if (!supervisorForm.name?.trim()) errs.name = "Name is required";
     if (!supervisorForm.phone?.trim()) errs.phone = "Phone is required";
@@ -867,7 +1008,8 @@ export default function HotelDetail() {
       </div>
 
       {/* Hotel QR Modal */}
-      {showHotelQRModal && hotel.hotel_qr_token && (
+      {/* 
+{showHotelQRModal && hotel.hotel_qr_token && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setShowHotelQRModal(false)}>
           <div className="bg-white rounded-3xl p-8 flex flex-col items-center gap-4 max-w-sm w-full shadow-2xl relative" onClick={e => e.stopPropagation()}>
             <div className="text-center mb-2">
@@ -915,9 +1057,980 @@ export default function HotelDetail() {
           </div>
         </div>
       )}
+ */}
+
+      {zoomedCard && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => setZoomedCard(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center animate-in fade-in zoom-in duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-end w-full mb-2">
+              <button onClick={() => setZoomedCard(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            {zoomedCard.status === "occupied" ? (
+              <div className="relative">
+                <div className="grayscale opacity-40">
+                  <QRCodeSVG value={`${window.location.origin}/v/${zoomedCard.qr_token}`} size={320} />
+                </div>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-xl font-bold text-gray-700 bg-white/90 px-4 py-2 rounded-lg shadow-sm">
+                    Assigned
+                  </span>
+                  {zoomedCard.assigned_car_plate && (
+                    <span className="text-lg font-semibold text-gray-800 bg-white/90 px-4 py-2 rounded-lg mt-3 w-[280px] whitespace-normal text-center leading-tight shadow-sm">
+                      {zoomedCard.assigned_car_plate}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <QRCodeSVG value={`${window.location.origin}/v/${zoomedCard.qr_token}`} size={320} />
+            )}
+            <div className="text-4xl font-bold font-heading text-[#0F2044] mt-6">
+              #{zoomedCard.key_tag_number} <span className="text-gray-400 font-normal px-2">·</span> Code {zoomedCard.card_code}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedIncidentCard && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col animate-in fade-in zoom-in duration-200 mb-8">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044]">Incident History - #{selectedIncidentCard.key_tag_number}</h3>
+              <button onClick={() => setSelectedIncidentCard(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              {loadingQrHistory ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-8 h-8 border-4 border-[#0F2044]/20 border-t-[#0F2044] rounded-full animate-spin"></div>
+                </div>
+              ) : qrIncidentHistory.length === 0 ? (
+                <p className="text-center text-gray-500 py-4">No incident history found.</p>
+              ) : (
+                <div className="space-y-4">
+                  {qrIncidentHistory.map(inc => (
+                    <div key={inc.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div>
+                          <p className="font-bold text-sm text-[#0F2044]">{inc.reason.replace(/_/g, " ").toUpperCase()}</p>
+                          <p className="text-xs text-gray-500">Reported by {inc.reported_by_name} ({inc.reported_by_role}) on {fmtDate(inc.reported_at)}</p>
+                        </div>
+                        <span className={`px-2 py-1 text-xs font-bold rounded-full ${inc.status === "pending" ? "bg-amber-100 text-amber-700" : inc.status === "approved" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700"}`}>
+                          {inc.status.toUpperCase()}
+                        </span>
+                      </div>
+                      {inc.note && <p className="text-sm text-gray-600 bg-white p-3 rounded-lg border border-gray-100 mt-2">"{inc.note}"</p>}
+
+                      {inc.status === "pending" && (
+                        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-200">
+                          <button
+                            onClick={() => {
+                              api.post(`/qr-card-incidents/${inc.id}/approve`)
+                                .then(() => {
+                                  toast.success("Incident approved. New card generated.");
+                                  setSelectedIncidentCard(null);
+                                  api.get(`/providers/${hotel.provider_id}/qr-cards?search=${qrCardSearch}`).then(r => setQrCards(r.data.cards || []));
+                                })
+                                .catch(() => toast.error("Failed to approve"));
+                            }}
+                            className="px-4 py-2 bg-green-500 text-white font-bold text-sm rounded-lg hover:bg-green-600 transition-colors"
+                          >
+                            Approve (Block & Replace)
+                          </button>
+                          <button
+                            onClick={() => {
+                              api.post(`/qr-card-incidents/${inc.id}/reject`)
+                                .then(() => {
+                                  toast.success("Incident rejected. Card restored.");
+                                  setSelectedIncidentCard(null);
+                                  api.get(`/providers/${hotel.provider_id}/qr-cards?search=${qrCardSearch}`).then(r => setQrCards(r.data.cards || []));
+                                })
+                                .catch(() => toast.error("Failed to reject"));
+                            }}
+                            className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-bold text-sm rounded-lg hover:bg-gray-50 transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showModal && (
+        <div id="modal-create-event" className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col animate-in fade-in zoom-in duration-200 mb-8">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044]">Create New Event</h3>
+              <button onClick={() => { setShowModal(false); setForm({ name: "", date: "", end_date: "", venue: "", max_cars: 50, gate_timer_minutes: 5, start_time: "00:00", end_time: "23:59", gates: "Main Gate", zones: [{ name: "A", slots: 20 }] }); }} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <form onSubmit={handleCreateEvent} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Event Name <span className="text-red-500">*</span></label>
+                    <input type="text" value={form.name} onChange={e => { setForm({ ...form, name: e.target.value }); if (errors.name) setErrors(prev => ({ ...prev, name: undefined })); }}
+                      ref={el => { if (eventFieldRefs && eventFieldRefs.current) eventFieldRefs.current.name = el; }}
+                      className={`w-full px-4 py-2 rounded-xl border ${errors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                    {errors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.name}</p>}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Start Date <span className="text-red-500">*</span></label>
+                      <input type="date" value={form.date} onChange={e => { setForm({ ...form, date: e.target.value }); if (errors.date) setErrors(prev => ({ ...prev, date: undefined })); }}
+                        ref={el => { if (eventFieldRefs && eventFieldRefs.current) eventFieldRefs.current.date = el; }}
+                        className={`w-full px-4 py-2 rounded-xl border ${errors.date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                      {errors.date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.date}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Date <span className="text-red-500">*</span></label>
+                      <input type="date" value={form.end_date} onChange={e => { setForm({ ...form, end_date: e.target.value }); if (errors.end_date) setErrors(prev => ({ ...prev, end_date: undefined })); }}
+                        ref={el => { if (eventFieldRefs && eventFieldRefs.current) eventFieldRefs.current.end_date = el; }}
+                        className={`w-full px-4 py-2 rounded-xl border ${errors.end_date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                      {errors.end_date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.end_date}</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Venue <span className="text-red-500">*</span></label>
+                    <input type="text" value={form.venue} onChange={e => { setForm({ ...form, venue: e.target.value }); if (errors.venue) setErrors(prev => ({ ...prev, venue: undefined })); }}
+                      ref={el => { if (eventFieldRefs && eventFieldRefs.current) eventFieldRefs.current.venue = el; }}
+                      className={`w-full px-4 py-2 rounded-xl border ${errors.venue ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                    {errors.venue && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.venue}</p>}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Cars <span className="text-red-500">*</span></label>
+                      <input type="number" value={form.max_cars} onChange={e => { setForm({ ...form, max_cars: parseInt(e.target.value) }); if (errors.max_cars) setErrors(prev => ({ ...prev, max_cars: undefined })); }}
+                        ref={el => { if (eventFieldRefs && eventFieldRefs.current) eventFieldRefs.current.max_cars = el; }}
+                        className={`w-full px-4 py-2 rounded-xl border ${errors.max_cars ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                      {errors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.max_cars}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gate Timer (min)</label>
+                      <input type="number" min="1" max="30" value={form.gate_timer_minutes} onChange={e => { setForm({ ...form, gate_timer_minutes: e.target.value }); if (errors.gate_timer_minutes) setErrors(prev => ({ ...prev, gate_timer_minutes: undefined })); }}
+                        className={`w-full px-4 py-2 rounded-xl border ${errors.gate_timer_minutes ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                      {errors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.gate_timer_minutes}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Start Time <span className="text-red-500">*</span></label>
+                      <input type="time" value={form.start_time} onChange={e => { setForm({ ...form, start_time: e.target.value }); if (errors.start_time) setErrors(prev => ({ ...prev, start_time: undefined })); }}
+                        ref={el => { if (eventFieldRefs && eventFieldRefs.current) eventFieldRefs.current.start_time = el; }}
+                        className={`w-full px-4 py-2 rounded-xl border ${errors.start_time ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                      {errors.start_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.start_time}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Time <span className="text-red-500">*</span></label>
+                      <input type="time" value={form.end_time} onChange={e => { setForm({ ...form, end_time: e.target.value }); if (errors.end_time) setErrors(prev => ({ ...prev, end_time: undefined })); }}
+                        ref={el => { if (eventFieldRefs && eventFieldRefs.current) eventFieldRefs.current.end_time = el; }}
+                        className={`w-full px-4 py-2 rounded-xl border ${errors.end_time ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                      {errors.end_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.end_time}</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gates (comma separated)</label>
+                    <input type="text" placeholder="Main Gate, VIP, South" value={form.gates} onChange={e => { setForm({ ...form, gates: e.target.value }); if (errors.gates) setErrors(prev => ({ ...prev, gates: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${errors.gates ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]`} />
+                    {errors.gates && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.gates}</p>}
+                  </div>
+
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                        Parking Zones
+                      </label>
+                      <span className={`text-xs font-bold ${totalSlots > form.max_cars ? "text-red-500" : "text-emerald-600"}`}>
+                        {totalSlots} / {form.max_cars} slots
+                      </span>
+                    </div>
+                    <div className="space-y-2 mb-2">
+                      {form.zones.map((z, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <input
+                            type="text"
+                            placeholder="Zone name (e.g. A)"
+                            value={z.name}
+                            onChange={e => {
+                              const zones = [...form.zones];
+                              zones[i] = { ...zones[i], name: e.target.value };
+                              setForm({ ...form, zones });
+                            }}
+                            className="flex-1 px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-[#1A3C6E] text-sm"
+                          />
+                          <input
+                            type="number"
+                            placeholder="Slots"
+                            value={z.slots}
+                            min={1}
+                            onChange={e => {
+                              const zones = [...form.zones];
+                              zones[i] = { ...zones[i], slots: parseInt(e.target.value) || 0 };
+                              setForm({ ...form, zones });
+                            }}
+                            className="w-20 px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-[#1A3C6E] text-sm text-center"
+                          />
+                          <button type="button"
+                            onClick={() => setForm({ ...form, zones: form.zones.filter((_, k) => k !== i) })}
+                            className="text-red-400 hover:text-red-600 font-bold text-lg leading-none px-1">
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button"
+                      onClick={() => setForm({ ...form, zones: [...form.zones, { name: "", slots: 10 }] })}
+                      className="w-full py-2 rounded-xl border border-dashed border-[#1A3C6E] text-[#1A3C6E] text-sm font-semibold hover:bg-blue-50 transition">
+                      + Add Zone
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-400 mb-2"><span className="text-red-500">*</span> Required fields</p>
+                <div className="pt-4 flex gap-3">
+                  <button type="button" onClick={() => setShowModal(false)}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold hover:bg-gray-50 transition">
+                    Cancel
+                  </button>
+                  <button type="submit"
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-[#1A3C6E] text-white font-semibold hover:bg-[#0F2044] transition">
+                    Create Event
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
+      {driverModal && (
+        <div id="modal-add-driver" className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col mb-8">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044]">Add Driver</h3>
+              <button onClick={closeDriverModal} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <form onSubmit={handleAddDriver} className="space-y-4">
+                <div className="flex flex-col items-center mb-4">
+                  <div className="relative group">
+                    <div
+                      onClick={() => document.getElementById("driver-photo-input").click()}
+                      className="w-20 h-20 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-[#1A3C6E] transition overflow-hidden"
+                    >
+                      {driverPhotoPreview ? (
+                        <img src={driverPhotoPreview} alt="Driver"
+                          className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-3xl">🧑</span>
+                      )}
+                    </div>
+                    {driverPhotoPreview && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDriverPhotoPreview(null);
+                          setDriverPhotoFile(null);
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-all z-10"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-400 mt-1">Driver Photo (optional)</span>
+                  <input
+                    id="driver-photo-input"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleDriverPhoto}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Name <span className="text-red-500">*</span></label>
+                    <input type="text" value={driverForm.name}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.name = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, name: e.target.value }); if (driverErrors.name) setDriverErrors(prev => ({ ...prev, name: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {driverErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.name}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone <span className="text-red-500">*</span></label>
+                    <input type="tel" inputMode="numeric" value={driverForm.phone}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.phone = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }); if (driverErrors.phone) setDriverErrors(prev => ({ ...prev, phone: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {driverErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.phone}</p>}
+                  </div>
+                  <div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                      Email <span className="text-red-500">*</span>
+                    </label>
+                    <input type="email" value={driverForm.email}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.email = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, email: e.target.value }); if (driverErrors.email) setDriverErrors(prev => ({ ...prev, email: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {driverErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.email}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
+                    <select value={driverForm.gender}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.gender = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, gender: e.target.value }); if (driverErrors.gender) setDriverErrors(prev => ({ ...prev, gender: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`}>
+                      <option value="" disabled>Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                    {driverErrors.gender && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.gender}</p>}
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-100 my-2" />
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
+                  Documents
+                </p>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
+                    <input type="text" placeholder="ABCDE1234F" value={driverForm.pan_number}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.pan_number = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, pan_number: e.target.value.toUpperCase().slice(0, 10) }); if (driverErrors.pan_number) setDriverErrors(prev => ({ ...prev, pan_number: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
+                    {driverErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.pan_number}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account Number</label>
+                    <input type="text" inputMode="numeric" value={driverForm.bank_account_number}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.bank_account_number = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18) }); if (driverErrors.bank_account_number) setDriverErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {driverErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_account_number}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC Code</label>
+                    <input type="text" placeholder="SBIN0001234" value={driverForm.bank_ifsc}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.bank_ifsc = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11) }); if (driverErrors.bank_ifsc) setDriverErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
+                    {driverErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_ifsc}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Driving License Number <span className="text-red-500">*</span></label>
+                    <input type="text" inputMode="text" value={driverForm.driving_license_number}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.driving_license_number = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, driving_license_number: e.target.value.toUpperCase().slice(0, 16) }); if (driverErrors.driving_license_number) setDriverErrors(prev => ({ ...prev, driving_license_number: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.driving_license_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
+                    {driverErrors.driving_license_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.driving_license_number}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
+                    <input type="text" inputMode="numeric" value={driverForm.aadhar_number}
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.aadhar_number = el; }}
+                      onChange={e => { setDriverForm({ ...driverForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12) }); if (driverErrors.aadhar_number) setDriverErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {driverErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.aadhar_number}</p>}
+                  </div>
+                  <div />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                    Driving License Photo <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative group">
+                    <div
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.licensePhoto = el; }}
+                      onClick={() => document.getElementById("license-photo-input").click()}
+                      className={`w-full border-2 border-dashed ${driverErrors.licensePhoto ? "border-red-400" : "border-gray-200"} rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#1A3C6E] transition`}
+                    >
+                      {licensePhotoPreview ? (
+                        <img src={licensePhotoPreview} alt="License"
+                          className="h-24 w-full object-cover rounded-lg" />
+                      ) : (
+                        <>
+                          <span className="text-2xl mb-1">💳</span>
+                          <span className="text-xs text-gray-400">Click to upload license photo</span>
+                        </>
+                      )}
+                    </div>
+                    {licensePhotoPreview && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLicensePhotoPreview(null);
+                          setLicensePhotoFile(null);
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-all z-10"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    id="license-photo-input"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleLicensePhoto}
+                  />
+                </div>
+                {driverErrors.licensePhoto && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.licensePhoto}</p>}
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                    Aadhar Photo <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative group">
+                    <div
+                      ref={el => { if (driverFieldRefs && driverFieldRefs.current) driverFieldRefs.current.drvAadharPhoto = el; }}
+                      onClick={() => document.getElementById("drv-aadhar-photo-input").click()}
+                      className={`w-full border-2 border-dashed ${driverErrors.drvAadharPhoto ? "border-red-400" : "border-gray-200"} rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#1A3C6E] transition`}
+                    >
+                      {drvAadharPhotoPreview ? (
+                        <img src={drvAadharPhotoPreview} alt="Aadhar"
+                          className="h-24 w-full object-cover rounded-lg" />
+                      ) : (
+                        <>
+                          <span className="text-2xl mb-1">📄</span>
+                          <span className="text-xs text-gray-400">Click to upload aadhar photo</span>
+                        </>
+                      )}
+                    </div>
+                    {drvAadharPhotoPreview && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDrvAadharPhotoPreview(null);
+                          setDrvAadharPhotoFile(null);
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-all z-10"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    id="drv-aadhar-photo-input"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => { handleDriverAadharPhoto(e); if (driverErrors.drvAadharPhoto) setDriverErrors(prev => ({ ...prev, drvAadharPhoto: undefined })); }}
+                  />
+                </div>
+                {driverErrors.drvAadharPhoto && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.drvAadharPhoto}</p>}
+
+
+                <p className="text-xs text-gray-400 mb-2"><span className="text-red-500">*</span> Required fields</p>
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={closeDriverModal}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button type="submit" disabled={savingDriver}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-[#1A3C6E] text-white font-semibold hover:bg-[#0F2044] disabled:opacity-60">
+                    {savingDriver ? "Saving..." : "Add Driver"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {supervisorModal && (
+        <div id="modal-add-supervisor" className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 bg-black/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col animate-in fade-in zoom-in duration-200 mb-8">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044]">Add Supervisor</h3>
+              <button onClick={() => setSupervisorModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <form onSubmit={handleAddSupervisor} autoComplete="off" className="space-y-4">
+                <div className="flex flex-col items-center mb-4">
+                  <div className="relative group">
+                    <div
+                      onClick={() => document.getElementById("supervisor-photo-input").click()}
+                      className="w-20 h-20 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-[#1A3C6E] transition overflow-hidden"
+                    >
+                      {supervisorPhotoPreview ? (
+                        <img src={supervisorPhotoPreview} alt="Supervisor"
+                          className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-3xl">🧑‍💼</span>
+                      )}
+                    </div>
+                    {supervisorPhotoPreview && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSupervisorPhotoPreview(null);
+                          setSupervisorForm(prev => ({ ...prev, supervisor_photo_file: null }));
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-all z-10"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-400 mt-1">Supervisor Photo (optional)</span>
+                  <input
+                    id="supervisor-photo-input"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      setSupervisorPhotoPreview(URL.createObjectURL(file));
+                      setSupervisorForm(prev => ({ ...prev, supervisor_photo_file: file }));
+                    }}
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Full Name <span className="text-red-500">*</span></label>
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.name = el; }} type="text" value={supervisorForm.name}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, name: e.target.value }); if (supervisorErrors.name) setSupervisorErrors(prev => ({ ...prev, name: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {supervisorErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.name}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone Number <span className="text-red-500">*</span></label>
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.phone = el; }} type="tel" inputMode="numeric" value={supervisorForm.phone}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }); if (supervisorErrors.phone) setSupervisorErrors(prev => ({ ...prev, phone: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {supervisorErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.phone}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email <span className="text-red-500">*</span></label>
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.email = el; }} type="email" value={supervisorForm.email}
+                      name="new-supervisor-email" autoComplete="off"
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, email: e.target.value }); if (supervisorErrors.email) setSupervisorErrors(prev => ({ ...prev, email: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {supervisorErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.email}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
+                    <select ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.gender = el; }} value={supervisorForm.gender}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, gender: e.target.value }); if (supervisorErrors.gender) setSupervisorErrors(prev => ({ ...prev, gender: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`}>
+                      <option value="" disabled>Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                    {supervisorErrors.gender && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.gender}</p>}
+                  </div>
+                </div>
+                {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Password <span className="text-red-500">*</span></label>
+                    <input type="password" value={supervisorForm.password}
+                      name="new-supervisor-password" autoComplete="new-password"
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, password: e.target.value}); if (supervisorErrors.password) setSupervisorErrors(prev => ({ ...prev, password: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.password ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+{ supervisorErrors.password && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.password}</p> }
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Confirm <span className="text-red-500">*</span></label>
+                    <input type="password" value={supervisorForm.confirmPassword}
+                      name="new-supervisor-confirm-password" autoComplete="new-password"
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, confirmPassword: e.target.value}); if (supervisorErrors.confirmPassword) setSupervisorErrors(prev => ({ ...prev, confirmPassword: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.confirmPassword ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+{ supervisorErrors.confirmPassword && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.confirmPassword}</p> }
+                    {supervisorForm.password && supervisorForm.confirmPassword && supervisorForm.password !== supervisorForm.confirmPassword && (
+                      <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+                    )}
+                  </div>
+                </div> */}
+                <div className="border-t border-gray-100 my-4" />
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+                  Documents
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.pan_number = el; }} type="text" placeholder="ABCDE1234F" value={supervisorForm.pan_number}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, pan_number: e.target.value.toUpperCase().slice(0, 10) }); if (supervisorErrors.pan_number) setSupervisorErrors(prev => ({ ...prev, pan_number: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
+                    {supervisorErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.pan_number}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account Number</label>
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_account_number = el; }} type="text" inputMode="numeric" value={supervisorForm.bank_account_number}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18) }); if (supervisorErrors.bank_account_number) setSupervisorErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {supervisorErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_account_number}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC Code</label>
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_ifsc = el; }} type="text" placeholder="SBIN0001234" value={supervisorForm.bank_ifsc}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11) }); if (supervisorErrors.bank_ifsc) setSupervisorErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
+                    {supervisorErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_ifsc}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.aadhar_number = el; }} type="text" inputMode="numeric" value={supervisorForm.aadhar_number}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12) }); if (supervisorErrors.aadhar_number) setSupervisorErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
+                      className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
+                    {supervisorErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.aadhar_number}</p>}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                    Aadhar Photo <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative group">
+                    <div
+                      ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.supAadharPhoto = el; }}
+                      onClick={() => document.getElementById("sup-aadhar-photo-input").click()}
+                      className={`w-full border-2 border-dashed ${supervisorErrors.supAadharPhoto ? "border-red-400" : "border-gray-200"} rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#1A3C6E] transition`}
+                    >
+                      {supAadharPhotoPreview ? (
+                        <img src={supAadharPhotoPreview} alt="Aadhar"
+                          className="h-24 w-full object-cover rounded-lg" />
+                      ) : (
+                        <>
+                          <span className="text-2xl mb-1">📄</span>
+                          <span className="text-xs text-gray-400">Click to upload aadhar photo</span>
+                        </>
+                      )}
+                    </div>
+                    {supAadharPhotoPreview && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSupAadharPhotoPreview(null);
+                          setSupAadharPhotoFile(null);
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-all z-10"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    id="sup-aadhar-photo-input"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => { handleSupAadharPhoto(e); if (supervisorErrors.supAadharPhoto) setSupervisorErrors(prev => ({ ...prev, supAadharPhoto: undefined })); }}
+                  />
+                </div>
+                {supervisorErrors.supAadharPhoto && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.supAadharPhoto}</p>}
+
+                <p className="text-xs text-gray-400 mb-2"><span className="text-red-500">*</span> Required fields</p>
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={() => setSupervisorModal(false)}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button type="submit" disabled={savingSupervisor}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-[#0F2044] text-white font-semibold hover:bg-[#1A3C6E] disabled:opacity-60 transition shadow-md">
+                    {savingSupervisor ? "Saving..." : "Add Supervisor"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {hotelModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto pt-8 pb-8" onClick={() => setHotelModal(false)}>
+          <div
+            className="relative bg-white rounded-2xl shadow-2xl max-w-xl w-full mx-4 animate-in fade-in slide-in-from-top-4 duration-300 flex flex-col mb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <h3 className="font-heading text-xl font-bold text-[#0F2044]">Add New Hotel</h3>
+              <button type="button" onClick={() => setHotelModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={submitHotel} className="px-6 py-4">
+
+              <div className="space-y-4">
+                {/* Hotel Photo */}
+                <div className="flex flex-col items-center mb-6">
+                  <div className="relative group">
+                    <label className="cursor-pointer flex flex-col items-center gap-2">
+                      <div className="w-24 h-24 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden group-hover:border-[#1A3C6E] transition-colors">
+                        {hotelForm.hotel_photo ? (
+                          <img src={hotelForm.hotel_photo} className="w-full h-full object-cover" alt="Hotel" />
+                        ) : (
+                          <Camera className="w-8 h-8 text-gray-300 group-hover:text-[#1A3C6E] transition-colors" />
+                        )}
+                      </div>
+                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                        {uploadingHotelPhoto ? "Uploading..." : "Hotel Photo"}
+                      </span>
+                      <input type="file" className="hidden" accept="image/*" onChange={handleHotelPhotoUpload} disabled={uploadingHotelPhoto} />
+                    </label>
+                    {hotelForm.hotel_photo && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setHotelForm(prev => ({ ...prev, hotel_photo: null }));
+                        }}
+                        className="absolute top-0 right-0 translate-x-2 -translate-y-2 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 transition-all z-10"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Hotel Name */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Hotel Name <span className="text-red-500">*</span></label>
+                  <input type="text" value={hotelForm.name}
+                    ref={el => { if (hotelFieldRefs && hotelFieldRefs.current) hotelFieldRefs.current.name = el; }}
+                    onChange={(e) => { setHotelForm({ ...hotelForm, name: e.target.value }); if (hotelErrors.name) setHotelErrors(prev => ({ ...prev, name: undefined })); }}
+                    className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.name ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors`} />
+                  {hotelErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.name}</p>}
+                </div>
+
+                {/* Address */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Address <span className="text-red-500">*</span></label>
+                  <input type="text" value={hotelForm.address}
+                    ref={el => { if (hotelFieldRefs && hotelFieldRefs.current) hotelFieldRefs.current.address = el; }}
+                    onChange={(e) => { setHotelForm({ ...hotelForm, address: e.target.value }); if (hotelErrors.address) setHotelErrors(prev => ({ ...prev, address: undefined })); }}
+                    className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.address ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors`} />
+                  {hotelErrors.address && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.address}</p>}
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">State <span className="text-red-500">*</span></label>
+                  <select
+                    value={hotelForm.state || ""}
+                    ref={el => { if (hotelFieldRefs && hotelFieldRefs.current) hotelFieldRefs.current.state = el; }}
+                    onChange={e => { setHotelForm(prev => ({ ...prev, state: e.target.value, city: "" })); if (hotelErrors.state) setHotelErrors(prev => ({ ...prev, state: undefined })); }}
+                    className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.state ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors`}
+                  >
+                    <option value="">Select State</option>
+                    {State.getStatesOfCountry("IN").map(s => (
+                      <option key={s.isoCode} value={s.name}>{s.name}</option>
+                    ))}
+                  </select>
+                  {hotelErrors.state && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.state}</p>}
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">City <span className="text-red-500">*</span></label>
+                  <select
+                    value={hotelForm.city || ""}
+                    ref={el => { if (hotelFieldRefs && hotelFieldRefs.current) hotelFieldRefs.current.city = el; }}
+                    onChange={e => { setHotelForm(prev => ({ ...prev, city: e.target.value })); if (hotelErrors.city) setHotelErrors(prev => ({ ...prev, city: undefined })); }}
+                    disabled={!hotelForm.state}
+                    className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.city ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <option value="">Select City</option>
+                    {(hotelForm.state
+                      ? City.getCitiesOfState("IN", State.getStatesOfCountry("IN").find(s => s.name === hotelForm.state)?.isoCode || "")
+                      : []
+                    ).map(c => (
+                      <option key={c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                  {hotelErrors.city && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.city}</p>}
+                </div>
+
+                {/* Contact Info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact Person Name <span className="text-red-500">*</span></label>
+                    <input type="text" value={hotelForm.contact_person_name}
+                      ref={el => { if (hotelFieldRefs && hotelFieldRefs.current) hotelFieldRefs.current.contact_person_name = el; }}
+                      onChange={(e) => { setHotelForm({ ...hotelForm, contact_person_name: e.target.value }); if (hotelErrors.contact_person_name) setHotelErrors(prev => ({ ...prev, contact_person_name: undefined })); }}
+                      className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.contact_person_name ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors`} />
+                    {hotelErrors.contact_person_name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.contact_person_name}</p>}
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact Person Phone <span className="text-red-500">*</span></label>
+                    <input type="tel" value={hotelForm.contact_person_phone} inputMode="numeric"
+                      ref={el => { if (hotelFieldRefs && hotelFieldRefs.current) hotelFieldRefs.current.contact_person_phone = el; }}
+                      onChange={(e) => { setHotelForm({ ...hotelForm, contact_person_phone: e.target.value.replace(/\D/g, "").slice(0, 10) }); if (hotelErrors.contact_person_phone) setHotelErrors(prev => ({ ...prev, contact_person_phone: undefined })); }}
+                      className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.contact_person_phone ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors`} />
+                    {hotelErrors.contact_person_phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.contact_person_phone}</p>}
+                  </div>
+                </div>
+
+                {/* Contact Email */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact Person Email (optional)</label>
+                  <input type="email" value={hotelForm.contact_person_email}
+                    ref={el => { if (hotelFieldRefs && hotelFieldRefs.current) hotelFieldRefs.current.contact_person_email = el; }}
+                    onChange={(e) => { setHotelForm({ ...hotelForm, contact_person_email: e.target.value }); if (hotelErrors.contact_person_email) setHotelErrors(prev => ({ ...prev, contact_person_email: undefined })); }}
+                    className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.contact_person_email ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors`} />
+                  {hotelErrors.contact_person_email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.contact_person_email}</p>}
+                </div>
+
+                {/* Slots */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Total Valet Slots <span className="text-red-500">*</span></label>
+                  <input type="number" value={hotelForm.total_valet_slots}
+                    ref={el => { if (hotelFieldRefs && hotelFieldRefs.current) hotelFieldRefs.current.total_valet_slots = el; }}
+                    onChange={(e) => { setHotelForm({ ...hotelForm, total_valet_slots: e.target.value }); if (hotelErrors.total_valet_slots) setHotelErrors(prev => ({ ...prev, total_valet_slots: undefined })); }}
+                    className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.total_valet_slots ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors`} />
+                  {hotelErrors.total_valet_slots && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.total_valet_slots}</p>}
+                </div>
+                {/* Gate Timer */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Gate Wait Timer (min)</label>
+                  <input type="number" min="1" max="30" value={hotelForm.gate_timer_minutes}
+                    onChange={(e) => { setHotelForm({ ...hotelForm, gate_timer_minutes: e.target.value }); if (hotelErrors.gate_timer_minutes) setHotelErrors(prev => ({ ...prev, gate_timer_minutes: undefined })); }}
+                    className={`mt-1 w-full px-4 py-2 rounded-xl border ${hotelErrors.gate_timer_minutes ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1A3C6E] transition-colors`} />
+                  {hotelErrors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {hotelErrors.gate_timer_minutes}</p>}
+                </div>
+
+                {/* Gates */}
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Gates</label>
+                  </div>
+                  <div className="space-y-2 mb-2">
+                    {gates.map((gate, i) => (
+                      <div key={i} className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          placeholder="Gate name"
+                          value={gate}
+                          onChange={(e) => {
+                            const newGates = [...gates];
+                            newGates[i] = e.target.value;
+                            setGates(newGates);
+                          }}
+                          className="flex-1 px-3 py-2 rounded-xl border border-gray-200 outline-none focus:border-[#1A3C6E] text-sm"
+                        />
+                        <button type="button"
+                          onClick={() => {
+                            if (gates.length > 1) {
+                              setGates(gates.filter((_, idx) => idx !== i));
+                            }
+                          }}
+                          className="text-red-400 hover:text-red-600 font-bold text-lg leading-none px-1">
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button"
+                    onClick={() => setGates([...gates, ""])}
+                    className="w-full py-2 rounded-xl border border-dashed border-[#1A3C6E] text-[#1A3C6E] text-sm font-semibold hover:bg-blue-50 transition">
+                    + Add Gate
+                  </button>
+                </div>
+
+                {/* Zones */}
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Parking Zones</label>
+                    <span className={`text-xs font-bold ${totalHotelSlots > hotelForm.total_valet_slots ? "text-red-500" : "text-emerald-600"}`}>
+                      {totalHotelSlots} / {hotelForm.total_valet_slots || "—"} slots
+                    </span>
+                  </div>
+                  <div className="space-y-2 mb-2">
+                    {zones.map((zone, i) => (
+                      <div key={i} className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          placeholder="Zone name (e.g. A)"
+                          value={zone.name}
+                          onChange={(e) => {
+                            const newZones = [...zones];
+                            newZones[i] = { ...newZones[i], name: e.target.value };
+                            setZones(newZones);
+                          }}
+                          className="flex-1 px-3 py-2 rounded-xl border border-gray-200 outline-none focus:border-[#1A3C6E] text-sm"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Slots"
+                          value={zone.slots}
+                          min={1}
+                          onChange={(e) => {
+                            const newZones = [...zones];
+                            newZones[i] = { ...newZones[i], slots: parseInt(e.target.value) || 0 };
+                            setZones(newZones);
+                          }}
+                          className="w-20 px-3 py-2 rounded-xl border border-gray-200 outline-none focus:border-[#1A3C6E] text-sm text-center"
+                        />
+                        <button type="button"
+                          onClick={() => setZones(zones.filter((_, idx) => idx !== i))}
+                          className="text-red-400 hover:text-red-600 font-bold text-lg leading-none px-1">
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button"
+                    onClick={() => setZones([...zones, { name: "", slots: 10 }])}
+                    className="w-full py-2 rounded-xl border border-dashed border-[#1A3C6E] text-[#1A3C6E] text-sm font-semibold hover:bg-blue-50 transition">
+                    + Add Zone
+                  </button>
+                </div>
+
+
+              </div>
+
+
+              <p className="text-xs text-gray-400 mb-2"><span className="text-red-500">*</span> Required fields</p>
+              <div className="mt-8 flex gap-3">
+                <button type="button" onClick={() => setHotelModal(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 font-medium transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={uploadingHotelPhoto || savingHotel}
+                  className="flex-1 bg-[#1A3C6E] text-white rounded-xl py-2.5 font-medium hover:bg-[#0F2044] transition-colors shadow-lg shadow-[#1A3C6E]/20">
+                  {uploadingHotelPhoto ? "Uploading..." : savingHotel ? "Creating..." : "Create Hotel"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
 
     </SuperLayout>
   );
+
+
   if (!hotel) return <SuperLayout title="Hotel Detail"><div className="p-8 text-center text-gray-400">Hotel not found</div></SuperLayout>;
 
   return (
@@ -1044,9 +2157,10 @@ export default function HotelDetail() {
               >
                 {(hotel?.provider_is_verified && hotel?.is_active) ? "Inactive" : "Active"}
               </button>
-              {hotel.hotel_qr_token && (
+              {/* 
+{hotel.hotel_qr_token && (
                 <>
-                  {/* Mobile: icon button only */}
+                  Mobile: icon button only
                   <button
                     className="sm:hidden flex items-center justify-center w-9 h-9 rounded-xl bg-white/10 border border-white/20 hover:bg-white/20 transition"
                     onClick={() => setShowHotelQRModal(true)}
@@ -1055,7 +2169,7 @@ export default function HotelDetail() {
                     <QrCode className="w-5 h-5 text-white/80" />
                   </button>
 
-                  {/* Desktop: full QR block */}
+                  Desktop: full QR block
                   <div className="hidden sm:flex flex-row items-center gap-3 bg-white/10 border border-white/20 rounded-xl p-3">
                     <div className="bg-white rounded-lg p-1.5 cursor-pointer" onClick={() => setShowHotelQRModal(true)}>
                       <QRCodeSVG className="hotel-qr-svg" value={`${window.location.origin}/hotel-register/${hotel.hotel_qr_token}`} size={72} />
@@ -1095,9 +2209,10 @@ export default function HotelDetail() {
                         <Download className="w-3 h-3" /> Download
                       </button>
                     </div>
-                  </div>
+                  </div>hotelModal
                 </>
               )}
+ */}
             </div>
           </div>
         </div>
@@ -1111,6 +2226,7 @@ export default function HotelDetail() {
             { id: "supervisors", label: "Supervisors", icon: ShieldCheck },
             // { id: "guest_list", label: "Guest List", icon: Users },
             { id: "cars", label: "Cars", icon: Car },
+            { id: "qr_cards", label: "QR Cards", icon: QrCode },
             { id: "queue", label: "Live Queue", icon: Radio },
             { id: "incidents", label: "Incidents", icon: AlertTriangle }
           ].map(tab => (
@@ -1225,28 +2341,28 @@ export default function HotelDetail() {
                 <form onSubmit={handleSaveHotel} className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Name</label>
-                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.name = el; }} 
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.name = el; }}
                       type="text"
                       value={editForm.name}
-                      onChange={(e) => { setEditForm({ ...editForm, name: e.target.value}); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }}
+                      onChange={(e) => { setEditForm({ ...editForm, name: e.target.value }); if (editErrors.name) setEditErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${editErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     />
-{ editErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.name}</p> }
+                    {editErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.name}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Address</label>
-                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.address = el; }} 
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.address = el; }}
                       type="text"
                       value={editForm.address}
-                      onChange={(e) => { setEditForm(prev => ({ ...prev, address: e.target.value})); if (editErrors.address) setEditErrors(prev => ({ ...prev, address: undefined })); }}
+                      onChange={(e) => { setEditForm(prev => ({ ...prev, address: e.target.value })); if (editErrors.address) setEditErrors(prev => ({ ...prev, address: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${editErrors.address ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     />
-{ editErrors.address && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.address}</p> }
+                    {editErrors.address && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.address}</p>}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">State <span className="text-red-500">*</span></label>
-                      <select ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.state = el; }} 
+                      <select ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.state = el; }}
                         value={editForm.state || ""}
                         onChange={e => { setEditForm(prev => ({ ...prev, state: e.target.value, city: "" })); if (editErrors.state) setEditErrors(prev => ({ ...prev, state: undefined })); }}
                         className={`w-full px-4 py-2 rounded-xl border ${editErrors.state ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
@@ -1260,7 +2376,7 @@ export default function HotelDetail() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">City <span className="text-red-500">*</span></label>
-                      <select ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.city = el; }} 
+                      <select ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.city = el; }}
                         value={editForm.city || ""}
                         onChange={e => { setEditForm(prev => ({ ...prev, city: e.target.value })); if (editErrors.city) setEditErrors(prev => ({ ...prev, city: undefined })); }}
                         disabled={!editForm.state}
@@ -1279,14 +2395,14 @@ export default function HotelDetail() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Total Valet Slots</label>
-                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.total_valet_slots = el; }} 
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.total_valet_slots = el; }}
                       type="number"
                       min={1}
                       value={editForm.total_valet_slots}
-                      onChange={(e) => { setEditForm({ ...editForm, total_valet_slots: e.target.value}); if (editErrors.total_valet_slots) setEditErrors(prev => ({ ...prev, total_valet_slots: undefined })); }}
+                      onChange={(e) => { setEditForm({ ...editForm, total_valet_slots: e.target.value }); if (editErrors.total_valet_slots) setEditErrors(prev => ({ ...prev, total_valet_slots: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${editErrors.total_valet_slots ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     />
-{ editErrors.total_valet_slots && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.total_valet_slots}</p> }
+                    {editErrors.total_valet_slots && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.total_valet_slots}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gate Wait Timer (min)</label>
@@ -1295,21 +2411,14 @@ export default function HotelDetail() {
                       min={1}
                       max={30}
                       value={editForm.gate_timer_minutes}
-                      onChange={(e) => { setEditForm({ ...editForm, gate_timer_minutes: e.target.value}); if (editErrors.gate_timer_minutes) setEditErrors(prev => ({ ...prev, gate_timer_minutes: undefined })); }}
+                      onChange={(e) => { setEditForm({ ...editForm, gate_timer_minutes: e.target.value }); if (editErrors.gate_timer_minutes) setEditErrors(prev => ({ ...prev, gate_timer_minutes: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${editErrors.gate_timer_minutes ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     />
-{ editErrors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.gate_timer_minutes}</p> }
+                    {editErrors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.gate_timer_minutes}</p>}
                     <p className="text-xs text-gray-400 mt-1">Default timer for this hotel's daily and special events.</p>
                   </div>
 
-                  <div className="col-span-1 md:col-span-2 flex items-center gap-2 mb-2">
-                    <input type="checkbox" id="edit_allow_instant_park" checked={editForm.allow_instant_park}
-                           onChange={(e) => setEditForm(prev => ({ ...prev, allow_instant_park: e.target.checked }))}
-                           className="w-4 h-4 rounded text-[#1D4ED8] focus:ring-[#1D4ED8]" />
-                    <label htmlFor="edit_allow_instant_park" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
-                      Allow Instant Park for this hotel's events
-                    </label>
-                  </div>
+
 
                   <div className="col-span-1 md:col-span-2 pt-6 pb-2 border-t border-gray-100">
                     <h3 className="text-sm font-bold text-[#0F2044] uppercase tracking-wider">Login Credentials</h3>
@@ -1318,13 +2427,13 @@ export default function HotelDetail() {
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                       Login Email<span className="text-red-500"> *</span>
                     </label>
-                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_email = el; }} 
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_email = el; }}
                       type="email"
                       value={editForm.provider_email}
-                      onChange={(e) => { setEditForm({ ...editForm, provider_email: e.target.value}); if (editErrors.provider_email) setEditErrors(prev => ({ ...prev, provider_email: undefined })); }}
+                      onChange={(e) => { setEditForm({ ...editForm, provider_email: e.target.value }); if (editErrors.provider_email) setEditErrors(prev => ({ ...prev, provider_email: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${editErrors.provider_email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     />
-{ editErrors.provider_email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.provider_email}</p> }
+                    {editErrors.provider_email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.provider_email}</p>}
                     <p className="text-xs text-gray-400 mt-1">This email is used to log in to the app</p>
                   </div>
                   <div></div>
@@ -1332,26 +2441,26 @@ export default function HotelDetail() {
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                       New Password (leave blank to keep current)
                     </label>
-                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_password = el; }} 
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_password = el; }}
                       type="password"
                       value={editForm.provider_password}
-                      onChange={(e) => { setEditForm({ ...editForm, provider_password: e.target.value}); if (editErrors.provider_password) setEditErrors(prev => ({ ...prev, provider_password: undefined })); }}
+                      onChange={(e) => { setEditForm({ ...editForm, provider_password: e.target.value }); if (editErrors.provider_password) setEditErrors(prev => ({ ...prev, provider_password: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${editErrors.provider_password ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     />
-{ editErrors.provider_password && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.provider_password}</p> }
+                    {editErrors.provider_password && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.provider_password}</p>}
                   </div>
                   {editForm.provider_password && (
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                         Confirm Password<span className="text-red-500"> *</span>
                       </label>
-                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_confirm_password = el; }} 
+                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.provider_confirm_password = el; }}
                         type="password"
                         value={editForm.provider_confirm_password}
-                        onChange={(e) => { setEditForm({ ...editForm, provider_confirm_password: e.target.value}); if (editErrors.provider_confirm_password) setEditErrors(prev => ({ ...prev, provider_confirm_password: undefined })); }}
+                        onChange={(e) => { setEditForm({ ...editForm, provider_confirm_password: e.target.value }); if (editErrors.provider_confirm_password) setEditErrors(prev => ({ ...prev, provider_confirm_password: undefined })); }}
                         className={`w-full px-4 py-2 rounded-xl border ${editErrors.provider_confirm_password ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                       />
-{ editErrors.provider_confirm_password && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.provider_confirm_password}</p> }
+                      {editErrors.provider_confirm_password && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.provider_confirm_password}</p>}
                     </div>
                   )}
                   <div className="col-span-1 md:col-span-2 pt-6 pb-2 border-t border-gray-100">
@@ -1359,34 +2468,34 @@ export default function HotelDetail() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Contact Person Name</label>
-                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_name = el; }} 
+                    <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_name = el; }}
                       type="text"
                       value={editForm.contact_person_name}
-                      onChange={(e) => { setEditForm({ ...editForm, contact_person_name: e.target.value}); if (editErrors.contact_person_name) setEditErrors(prev => ({ ...prev, contact_person_name: undefined })); }}
+                      onChange={(e) => { setEditForm({ ...editForm, contact_person_name: e.target.value }); if (editErrors.contact_person_name) setEditErrors(prev => ({ ...prev, contact_person_name: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${editErrors.contact_person_name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     />
-{ editErrors.contact_person_name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.contact_person_name}</p> }
+                    {editErrors.contact_person_name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.contact_person_name}</p>}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone</label>
-                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_phone = el; }} 
+                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_phone = el; }}
                         type="text"
                         value={editForm.contact_person_phone}
-                        onChange={(e) => { setEditForm({ ...editForm, contact_person_phone: e.target.value}); if (editErrors.contact_person_phone) setEditErrors(prev => ({ ...prev, contact_person_phone: undefined })); }}
+                        onChange={(e) => { setEditForm({ ...editForm, contact_person_phone: e.target.value }); if (editErrors.contact_person_phone) setEditErrors(prev => ({ ...prev, contact_person_phone: undefined })); }}
                         className={`w-full px-4 py-2 rounded-xl border ${editErrors.contact_person_phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                       />
-{ editErrors.contact_person_phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.contact_person_phone}</p> }
+                      {editErrors.contact_person_phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.contact_person_phone}</p>}
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email</label>
-                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_email = el; }} 
+                      <input ref={el => { if (hotelFieldRefs.current) hotelFieldRefs.current.contact_person_email = el; }}
                         type="email"
                         value={editForm.contact_person_email}
-                        onChange={(e) => { setEditForm({ ...editForm, contact_person_email: e.target.value}); if (editErrors.contact_person_email) setEditErrors(prev => ({ ...prev, contact_person_email: undefined })); }}
+                        onChange={(e) => { setEditForm({ ...editForm, contact_person_email: e.target.value }); if (editErrors.contact_person_email) setEditErrors(prev => ({ ...prev, contact_person_email: undefined })); }}
                         className={`w-full px-4 py-2 rounded-xl border ${editErrors.contact_person_email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                       />
-{ editErrors.contact_person_email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.contact_person_email}</p> }
+                      {editErrors.contact_person_email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {editErrors.contact_person_email}</p>}
                     </div>
                   </div>
                   <div>
@@ -2129,9 +3238,9 @@ export default function HotelDetail() {
                         <td className="px-6 py-4">
                           {inc.status ? (
                             <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${inc.status === "OPEN" ? "bg-red-100 text-red-700" :
-                                inc.status === "IN_REVIEW" ? "bg-amber-100 text-amber-700" :
-                                  inc.status === "RESOLVED" ? "bg-emerald-100 text-emerald-700" :
-                                    "bg-gray-100 text-gray-600"
+                              inc.status === "IN_REVIEW" ? "bg-amber-100 text-amber-700" :
+                                inc.status === "RESOLVED" ? "bg-emerald-100 text-emerald-700" :
+                                  "bg-gray-100 text-gray-600"
                               }`}>
                               {inc.status}
                             </span>
@@ -2254,71 +3363,64 @@ export default function HotelDetail() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Event Name <span className="text-red-500">*</span></label>
-                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.name = el; }}  type="text" value={eventForm.name}
-                    onChange={e => { setEventForm(prev => ({ ...prev, name: e.target.value})); if (eventErrors.name) setEventErrors(prev => ({ ...prev, name: undefined })); }}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.name = el; }} type="text" value={eventForm.name}
+                    onChange={e => { setEventForm(prev => ({ ...prev, name: e.target.value })); if (eventErrors.name) setEventErrors(prev => ({ ...prev, name: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     placeholder="e.g. New Year Gala" />
-{ eventErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.name}</p> }
+                  {eventErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.name}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Host Name (Optional)</label>
                   <input type="text" value={eventForm.host_name}
-                    onChange={e => { setEventForm(prev => ({ ...prev, host_name: e.target.value})); if (eventErrors.host_name) setEventErrors(prev => ({ ...prev, host_name: undefined })); }}
+                    onChange={e => { setEventForm(prev => ({ ...prev, host_name: e.target.value })); if (eventErrors.host_name) setEventErrors(prev => ({ ...prev, host_name: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.host_name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     placeholder="e.g. John Doe" />
-{ eventErrors.host_name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.host_name}</p> }
+                  {eventErrors.host_name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.host_name}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Host Email (Optional)</label>
-                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.host_email = el; }}  type="email" value={eventForm.host_email}
-                    onChange={e => { setEventForm(prev => ({ ...prev, host_email: e.target.value})); if (eventErrors.host_email) setEventErrors(prev => ({ ...prev, host_email: undefined })); }}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.host_email = el; }} type="email" value={eventForm.host_email}
+                    onChange={e => { setEventForm(prev => ({ ...prev, host_email: e.target.value })); if (eventErrors.host_email) setEventErrors(prev => ({ ...prev, host_email: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.host_email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     placeholder="e.g. host@example.com" />
-{ eventErrors.host_email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.host_email}</p> }
+                  {eventErrors.host_email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.host_email}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Start Date <span className="text-red-500">*</span></label>
-                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.date = el; }}  type="date" value={eventForm.date}
-                    onChange={e => { setEventForm(prev => ({ ...prev, date: e.target.value})); if (eventErrors.date) setEventErrors(prev => ({ ...prev, date: undefined })); }}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.date = el; }} type="date" value={eventForm.date}
+                    onChange={e => { setEventForm(prev => ({ ...prev, date: e.target.value })); if (eventErrors.date) setEventErrors(prev => ({ ...prev, date: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
-{ eventErrors.date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.date}</p> }
+                  {eventErrors.date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.date}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Date <span className="text-red-500">*</span></label>
-                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.end_date = el; }}  type="date" value={eventForm.end_date}
-                    onChange={e => { setEventForm(prev => ({ ...prev, end_date: e.target.value})); if (eventErrors.end_date) setEventErrors(prev => ({ ...prev, end_date: undefined })); }}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.end_date = el; }} type="date" value={eventForm.end_date}
+                    onChange={e => { setEventForm(prev => ({ ...prev, end_date: e.target.value })); if (eventErrors.end_date) setEventErrors(prev => ({ ...prev, end_date: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.end_date ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
-{ eventErrors.end_date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.end_date}</p> }
+                  {eventErrors.end_date && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.end_date}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Start Time <span className="text-red-500">*</span></label>
-                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.start_time = el; }}  type="time" value={eventForm.start_time}
-                    onChange={e => { setEventForm(prev => ({ ...prev, start_time: e.target.value})); if (eventErrors.start_time) setEventErrors(prev => ({ ...prev, start_time: undefined })); }}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.start_time = el; }} type="time" value={eventForm.start_time}
+                    onChange={e => { setEventForm(prev => ({ ...prev, start_time: e.target.value })); if (eventErrors.start_time) setEventErrors(prev => ({ ...prev, start_time: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.start_time ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
-{ eventErrors.start_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.start_time}</p> }
+                  {eventErrors.start_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.start_time}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">End Time <span className="text-red-500">*</span></label>
-                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.end_time = el; }}  type="time" value={eventForm.end_time}
-                    onChange={e => { setEventForm(prev => ({ ...prev, end_time: e.target.value})); if (eventErrors.end_time) setEventErrors(prev => ({ ...prev, end_time: undefined })); }}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.end_time = el; }} type="time" value={eventForm.end_time}
+                    onChange={e => { setEventForm(prev => ({ ...prev, end_time: e.target.value })); if (eventErrors.end_time) setEventErrors(prev => ({ ...prev, end_time: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.end_time ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
-{ eventErrors.end_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.end_time}</p> }
+                  {eventErrors.end_time && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.end_time}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Max Cars <span className="text-red-500">*</span></label>
-                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.max_cars = el; }}  type="number" min="1" value={eventForm.max_cars}
-                    onChange={e => { setEventForm(prev => ({ ...prev, max_cars: parseInt(e.target.value) || 0})); if (eventErrors.max_cars) setEventErrors(prev => ({ ...prev, max_cars: undefined })); }}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.max_cars = el; }} type="number" min="1" value={eventForm.max_cars}
+                    onChange={e => { setEventForm(prev => ({ ...prev, max_cars: parseInt(e.target.value) || 0 })); if (eventErrors.max_cars) setEventErrors(prev => ({ ...prev, max_cars: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.max_cars ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`} />
-{ eventErrors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.max_cars}</p> }
+                  {eventErrors.max_cars && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.max_cars}</p>}
                 </div>
-                <div className="flex items-center gap-2 mt-4 sm:col-span-2">
-                  <input type="checkbox" id="allow_instant_park_event" checked={eventForm.allow_instant_park}
-                         onChange={(e) => setEventForm(prev => ({ ...prev, allow_instant_park: e.target.checked }))}
-                         className="w-4 h-4 text-[#1D4ED8] bg-gray-100 border-gray-300 rounded focus:ring-[#1D4ED8]" />
-                  <label htmlFor="allow_instant_park_event" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
-                    Allow Instant Park for this event
-                  </label>
-                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gates</label>
                   <div className="space-y-2">
@@ -2360,11 +3462,11 @@ export default function HotelDetail() {
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Venue</label>
-                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.venue = el; }}  type="text" value={eventForm.venue}
-                    onChange={e => { setEventForm(prev => ({ ...prev, venue: e.target.value})); if (eventErrors.venue) setEventErrors(prev => ({ ...prev, venue: undefined })); }}
+                  <input ref={el => { if (eventFieldRefs.current) eventFieldRefs.current.venue = el; }} type="text" value={eventForm.venue}
+                    onChange={e => { setEventForm(prev => ({ ...prev, venue: e.target.value })); if (eventErrors.venue) setEventErrors(prev => ({ ...prev, venue: undefined })); }}
                     className={`w-full px-4 py-2 rounded-xl border ${eventErrors.venue ? "border-red-400" : "border-gray-200"} focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]/20 focus:border-[#1D4ED8]`}
                     placeholder="Venue name or location" />
-{ eventErrors.venue && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.venue}</p> }
+                  {eventErrors.venue && <p className="text-[11px] text-red-500 mt-1 font-medium">* {eventErrors.venue}</p>}
                 </div>
               </div>
 
@@ -2480,45 +3582,39 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Name <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.name = el; }}  type="text" value={driverForm.name}
-                      onChange={e => { setDriverForm({ ...driverForm, name: e.target.value}); if (driverErrors.name) setDriverErrors(prev => ({ ...prev, name: undefined })); }}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.name = el; }} type="text" value={driverForm.name}
+                      onChange={e => { setDriverForm({ ...driverForm, name: e.target.value }); if (driverErrors.name) setDriverErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
-{ driverErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.name}</p> }
+                    {driverErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.name}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.phone = el; }}  type="tel" value={driverForm.phone} inputMode="numeric"
-                      onChange={e => { setDriverForm({ ...driverForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10)}); if (driverErrors.phone) setDriverErrors(prev => ({ ...prev, phone: undefined })); }}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.phone = el; }} type="tel" value={driverForm.phone} inputMode="numeric"
+                      onChange={e => { setDriverForm({ ...driverForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }); if (driverErrors.phone) setDriverErrors(prev => ({ ...prev, phone: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ driverErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.phone}</p> }
+                    {driverErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.phone}</p>}
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">4-Digit PIN <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.pin = el; }}  type="text" value={driverForm.pin}
-                      onChange={e => { setDriverForm({ ...driverForm, pin: e.target.value.replace(/\D/g, "").slice(0, 4)}); if (driverErrors.pin) setDriverErrors(prev => ({ ...prev, pin: undefined })); }}
-                      placeholder="e.g. 1234"
-                      className={`w-full px-4 py-2 rounded-xl border ${driverErrors.pin ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono tracking-widest`} />
-{ driverErrors.pin && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.pin}</p> }
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                       Email <span className="text-red-500">*</span>
                     </label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.email = el; }}  type="email" value={driverForm.email}
-                      onChange={e => { setDriverForm({ ...driverForm, email: e.target.value}); if (driverErrors.email) setDriverErrors(prev => ({ ...prev, email: undefined })); }}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.email = el; }} type="email" value={driverForm.email}
+                      onChange={e => { setDriverForm({ ...driverForm, email: e.target.value }); if (driverErrors.email) setDriverErrors(prev => ({ ...prev, email: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
-{ driverErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.email}</p> }
+                    {driverErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.email}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
-                    <select ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.gender = el; }}  value={driverForm.gender}
-                      onChange={e => { setDriverForm({ ...driverForm, gender: e.target.value}); if (driverErrors.gender) setDriverErrors(prev => ({ ...prev, gender: undefined })); }}
+                    <select ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.gender = el; }} value={driverForm.gender}
+                      onChange={e => { setDriverForm({ ...driverForm, gender: e.target.value }); if (driverErrors.gender) setDriverErrors(prev => ({ ...prev, gender: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`}>
                       <option value="" disabled>Select gender</option>
                       <option value="male">Male</option>
                       <option value="female">Female</option>
                     </select>
-{ driverErrors.gender && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.gender}</p> }
+                    {driverErrors.gender && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.gender}</p>}
                   </div>
                   <div className="hidden sm:block"></div>
                 </div>
@@ -2531,38 +3627,38 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.pan_number = el; }}  type="text" placeholder="ABCDE1234F" value={driverForm.pan_number}
-                      onChange={e => { setDriverForm({ ...driverForm, pan_number: e.target.value.toUpperCase().slice(0, 10)}); if (driverErrors.pan_number) setDriverErrors(prev => ({ ...prev, pan_number: undefined })); }}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.pan_number = el; }} type="text" placeholder="ABCDE1234F" value={driverForm.pan_number}
+                      onChange={e => { setDriverForm({ ...driverForm, pan_number: e.target.value.toUpperCase().slice(0, 10) }); if (driverErrors.pan_number) setDriverErrors(prev => ({ ...prev, pan_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ driverErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.pan_number}</p> }
+                    {driverErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.pan_number}</p>}
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account Number</label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.bank_account_number = el; }}  type="text" value={driverForm.bank_account_number} inputMode="numeric"
-                      onChange={e => { setDriverForm({ ...driverForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18)}); if (driverErrors.bank_account_number) setDriverErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.bank_account_number = el; }} type="text" value={driverForm.bank_account_number} inputMode="numeric"
+                      onChange={e => { setDriverForm({ ...driverForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18) }); if (driverErrors.bank_account_number) setDriverErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ driverErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_account_number}</p> }
+                    {driverErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_account_number}</p>}
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC Code</label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.bank_ifsc = el; }}  type="text" placeholder="SBIN0001234" value={driverForm.bank_ifsc}
-                      onChange={e => { setDriverForm({ ...driverForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11)}); if (driverErrors.bank_ifsc) setDriverErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.bank_ifsc = el; }} type="text" placeholder="SBIN0001234" value={driverForm.bank_ifsc}
+                      onChange={e => { setDriverForm({ ...driverForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11) }); if (driverErrors.bank_ifsc) setDriverErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ driverErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_ifsc}</p> }
+                    {driverErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.bank_ifsc}</p>}
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Driving License Number <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.driving_license_number = el; }}  type="text" value={driverForm.driving_license_number}
-                      onChange={e => { setDriverForm({ ...driverForm, driving_license_number: e.target.value.toUpperCase().slice(0, 16)}); if (driverErrors.driving_license_number) setDriverErrors(prev => ({ ...prev, driving_license_number: undefined })); }}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.driving_license_number = el; }} type="text" value={driverForm.driving_license_number}
+                      onChange={e => { setDriverForm({ ...driverForm, driving_license_number: e.target.value.toUpperCase().slice(0, 16) }); if (driverErrors.driving_license_number) setDriverErrors(prev => ({ ...prev, driving_license_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.driving_license_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ driverErrors.driving_license_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.driving_license_number}</p> }
+                    {driverErrors.driving_license_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.driving_license_number}</p>}
                   </div>
                 </div>
 
-                <div ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.licensePhoto = el; }}  className="mb-4">
+                <div ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.licensePhoto = el; }} className="mb-4">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Driving License Photo <span className="text-red-500"> *</span></label>
                   <div className="relative group">
                     <div
@@ -2601,20 +3697,20 @@ export default function HotelDetail() {
                     onChange={handleLicensePhoto}
                   />
                 </div>
-                  {driverErrors.licensePhoto && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.licensePhoto}</p>}
+                {driverErrors.licensePhoto && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.licensePhoto}</p>}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.aadhar_number = el; }}  type="text" value={driverForm.aadhar_number} inputMode="numeric"
-                      onChange={e => { setDriverForm({ ...driverForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12)}); if (driverErrors.aadhar_number) setDriverErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
+                    <input ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.aadhar_number = el; }} type="text" value={driverForm.aadhar_number} inputMode="numeric"
+                      onChange={e => { setDriverForm({ ...driverForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12) }); if (driverErrors.aadhar_number) setDriverErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${driverErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ driverErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.aadhar_number}</p> }
+                    {driverErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {driverErrors.aadhar_number}</p>}
                   </div>
                   <div />
                 </div>
 
-                <div ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.drvAadharPhoto = el; }}  className="mb-4">
+                <div ref={el => { if (driverFieldRefs.current) driverFieldRefs.current.drvAadharPhoto = el; }} className="mb-4">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Aadhar Photo <span className="text-red-500"> *</span></label>
                   <div className="relative group">
                     <div
@@ -2726,36 +3822,36 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Full Name <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.name = el; }}  type="text" value={supervisorForm.name}
-                      onChange={e => { setSupervisorForm({ ...supervisorForm, name: e.target.value}); if (supervisorErrors.name) setSupervisorErrors(prev => ({ ...prev, name: undefined })); }}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.name = el; }} type="text" value={supervisorForm.name}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, name: e.target.value }); if (supervisorErrors.name) setSupervisorErrors(prev => ({ ...prev, name: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.name ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
-{ supervisorErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.name}</p> }
+                    {supervisorErrors.name && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.name}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Phone Number <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.phone = el; }}  type="tel" value={supervisorForm.phone} inputMode="numeric"
-                      onChange={e => { setSupervisorForm({ ...supervisorForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10)}); if (supervisorErrors.phone) setSupervisorErrors(prev => ({ ...prev, phone: undefined })); }}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.phone = el; }} type="tel" value={supervisorForm.phone} inputMode="numeric"
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }); if (supervisorErrors.phone) setSupervisorErrors(prev => ({ ...prev, phone: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.phone ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ supervisorErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.phone}</p> }
+                    {supervisorErrors.phone && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.phone}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.email = el; }}  type="email" value={supervisorForm.email}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.email = el; }} type="email" value={supervisorForm.email}
                       name="new-supervisor-email" autoComplete="off"
-                      onChange={e => { setSupervisorForm({ ...supervisorForm, email: e.target.value}); if (supervisorErrors.email) setSupervisorErrors(prev => ({ ...prev, email: undefined })); }}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, email: e.target.value }); if (supervisorErrors.email) setSupervisorErrors(prev => ({ ...prev, email: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.email ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
-{ supervisorErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.email}</p> }
+                    {supervisorErrors.email && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.email}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Gender <span className="text-red-500">*</span></label>
-                    <select ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.gender = el; }}  value={supervisorForm.gender}
-                      onChange={e => { setSupervisorForm({ ...supervisorForm, gender: e.target.value}); if (supervisorErrors.gender) setSupervisorErrors(prev => ({ ...prev, gender: undefined })); }}
+                    <select ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.gender = el; }} value={supervisorForm.gender}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, gender: e.target.value }); if (supervisorErrors.gender) setSupervisorErrors(prev => ({ ...prev, gender: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.gender ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`}>
                       <option value="" disabled>Select gender</option>
                       <option value="male">Male</option>
                       <option value="female">Female</option>
                     </select>
-{ supervisorErrors.gender && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.gender}</p> }
+                    {supervisorErrors.gender && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.gender}</p>}
                   </div>
                 </div>
                 {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2786,35 +3882,35 @@ export default function HotelDetail() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">PAN Card Number</label>
-                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.pan_number = el; }}  type="text" placeholder="ABCDE1234F" value={supervisorForm.pan_number}
-                      onChange={e => { setSupervisorForm({ ...supervisorForm, pan_number: e.target.value.toUpperCase().slice(0, 10)}); if (supervisorErrors.pan_number) setSupervisorErrors(prev => ({ ...prev, pan_number: undefined })); }}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.pan_number = el; }} type="text" placeholder="ABCDE1234F" value={supervisorForm.pan_number}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, pan_number: e.target.value.toUpperCase().slice(0, 10) }); if (supervisorErrors.pan_number) setSupervisorErrors(prev => ({ ...prev, pan_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.pan_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ supervisorErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.pan_number}</p> }
+                    {supervisorErrors.pan_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.pan_number}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank Account Number</label>
-                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_account_number = el; }}  type="text" value={supervisorForm.bank_account_number} inputMode="numeric"
-                      onChange={e => { setSupervisorForm({ ...supervisorForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18)}); if (supervisorErrors.bank_account_number) setSupervisorErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_account_number = el; }} type="text" value={supervisorForm.bank_account_number} inputMode="numeric"
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, bank_account_number: e.target.value.replace(/\D/g, "").slice(0, 18) }); if (supervisorErrors.bank_account_number) setSupervisorErrors(prev => ({ ...prev, bank_account_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.bank_account_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E]`} />
-{ supervisorErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_account_number}</p> }
+                    {supervisorErrors.bank_account_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_account_number}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Bank IFSC Code</label>
-                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_ifsc = el; }}  type="text" placeholder="SBIN0001234" value={supervisorForm.bank_ifsc}
-                      onChange={e => { setSupervisorForm({ ...supervisorForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11)}); if (supervisorErrors.bank_ifsc) setSupervisorErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.bank_ifsc = el; }} type="text" placeholder="SBIN0001234" value={supervisorForm.bank_ifsc}
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, bank_ifsc: e.target.value.toUpperCase().slice(0, 11) }); if (supervisorErrors.bank_ifsc) setSupervisorErrors(prev => ({ ...prev, bank_ifsc: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.bank_ifsc ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ supervisorErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_ifsc}</p> }
+                    {supervisorErrors.bank_ifsc && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.bank_ifsc}</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Aadhar Number <span className="text-red-500">*</span></label>
-                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.aadhar_number = el; }}  type="text" value={supervisorForm.aadhar_number} inputMode="numeric"
-                      onChange={e => { setSupervisorForm({ ...supervisorForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12)}); if (supervisorErrors.aadhar_number) setSupervisorErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
+                    <input ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.aadhar_number = el; }} type="text" value={supervisorForm.aadhar_number} inputMode="numeric"
+                      onChange={e => { setSupervisorForm({ ...supervisorForm, aadhar_number: e.target.value.replace(/\D/g, "").slice(0, 12) }); if (supervisorErrors.aadhar_number) setSupervisorErrors(prev => ({ ...prev, aadhar_number: undefined })); }}
                       className={`w-full px-4 py-2 rounded-xl border ${supervisorErrors.aadhar_number ? "border-red-400" : "border-gray-200"} focus:outline-none focus:border-[#1A3C6E] font-mono`} />
-{ supervisorErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.aadhar_number}</p> }
+                    {supervisorErrors.aadhar_number && <p className="text-[11px] text-red-500 mt-1 font-medium">* {supervisorErrors.aadhar_number}</p>}
                   </div>
                 </div>
 
-                <div ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.supAadharPhoto = el; }}  className="mb-4">
+                <div ref={el => { if (supervisorFieldRefs.current) supervisorFieldRefs.current.supAadharPhoto = el; }} className="mb-4">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Aadhar Photo <span className="text-red-500"> *</span></label>
                   <div className="relative group">
                     <div
@@ -2866,6 +3962,205 @@ export default function HotelDetail() {
                 </div>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "qr_cards" && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
+            <div>
+              <h2 className="font-heading text-lg font-semibold text-[#0F2044]">QR Card Pool</h2>
+              <p className="text-sm text-gray-500">
+                {qrDateFilter !== "all"
+                  ? `${filteredQrCards.length} of ${qrCards.length} cards shown (of ${hotelProvider?.max_cars || 0} total)`
+                  : `${qrCards.length} / ${hotelProvider?.max_cars || 0} cards generated`}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+              <select
+                value={qrDateFilter}
+                onChange={(e) => setQrDateFilter(e.target.value)}
+                className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]"
+              >
+                <option value="all">All Dates</option>
+                {uniqueQrDates.map(d => (
+                  <option key={d} value={d}>{fmtDate(d)}</option>
+                ))}
+              </select>
+              <div className="relative flex-1 sm:flex-none">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={qrCardSearch}
+                  onChange={(e) => setQrCardSearch(e.target.value)}
+                  placeholder="Search by key tag or code..."
+                  className="w-full sm:w-64 pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1A3C6E]/20 focus:border-[#1A3C6E]"
+                />
+              </div>
+              <button
+                onClick={async () => {
+                  if (filteredQrCards.length === 0) return toast.error("No cards to download");
+                  toast.loading(`Downloading ${filteredQrCards.length} QR cards...`, { id: "bulk-dl" });
+                  for (const card of filteredQrCards) {
+                    await downloadCardPng(card);
+                    await new Promise(r => setTimeout(r, 150));
+                  }
+                  toast.success("Done", { id: "bulk-dl" });
+                }}
+                className="px-4 py-2 bg-white border border-gray-200 text-[#0F2044] rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors"
+              >
+                <Download className="w-4 h-4" /> Download All (PNG)
+              </button>
+              <button
+                onClick={async () => {
+                  if (filteredQrCards.length === 0) return toast.error("No cards to print");
+                  toast.loading("Preparing print view...", { id: "print-all" });
+                  try {
+                    const FRONTEND_URL = window.location.origin;
+                    const cardsHtml = await Promise.all(filteredQrCards.map(async c => {
+                      const url = await QRCode.toDataURL(`${FRONTEND_URL}/v/${c.qr_token}`, { margin: 1 });
+                      return `
+                          <div class="card">
+                            <img src="${url}" />
+                            <div class="tag">#${c.key_tag_number}</div>
+                            <div class="code">Code ${c.card_code}</div>
+                          </div>
+                        `;
+                    }));
+                    const fullHtml = `
+                        <html>
+                          <head>
+                            <title>Print QR Cards - ${hotelProvider?.name || hotel?.name}</title>
+                            <style>
+                              body { font-family: sans-serif; padding: 20px; }
+                              .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+                              .card { border: 1px solid #ccc; padding: 15px; text-align: center; border-radius: 8px; page-break-inside: avoid; }
+                              img { max-width: 150px; height: auto; }
+                              .tag { font-size: 24px; font-weight: bold; margin-top: 10px; }
+                              .code { font-size: 16px; color: #555; margin-top: 2px; }
+                            </style>
+                          </head>
+                          <body>
+                            <h2>QR Cards for ${hotelProvider?.name || hotel?.name}</h2>
+                            <div class="grid">${cardsHtml.join('')}</div>
+                            <script>window.onload = () => window.print();</script>
+                          </body>
+                        </html>
+                      `;
+                    const w = window.open("", "_blank");
+                    if (!w) {
+                      toast.error("Popup blocked — please allow popups for this site and try again.", { id: "print-all" });
+                      return;
+                    }
+                    w.document.write(fullHtml);
+                    w.document.close();
+                    toast.success("Done", { id: "print-all" });
+                  } catch (err) {
+                    toast.error("Failed to generate print view", { id: "print-all" });
+                  }
+                }}
+                className="px-4 py-2 bg-[#0F2044] text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-[#1A3C6E] transition-colors"
+              >
+                <Download className="w-4 h-4" /> Print All
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 flex-1 overflow-y-auto">
+            {loadingQrCards ? (
+              <div className="flex items-center justify-center h-40">
+                <div className="w-8 h-8 border-4 border-[#0F2044]/20 border-t-[#0F2044] rounded-full animate-spin"></div>
+              </div>
+            ) : qrCards.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-40 text-gray-500">
+                <QrCode className="w-12 h-12 mb-2 text-gray-300" />
+                <p>No QR cards found in the pool.</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                  {paginatedQrCards.map(card => {
+                    const statusColors = {
+                      empty: { bg: "bg-green-500", text: "CHECKED IN" },
+                      occupied: { bg: "bg-blue-500", text: "PARKED" },
+                      pending_incident: { bg: "bg-amber-500", text: "PENDING" },
+                      blocked: { bg: "bg-gray-500", text: "BLOCKED" }
+                    };
+                    const sc = statusColors[card.status] || { bg: "bg-gray-500", text: card.status };
+
+                    return (
+                      <div key={card.id} className={`relative border rounded-xl p-3 flex flex-col items-center shadow-sm ${card.status === "blocked" ? "bg-gray-50 border-gray-200 opacity-60" : "bg-white border-gray-100"}`}>
+                        <button
+                          onClick={() => downloadCardPng(card)}
+                          className="absolute top-2 right-2 p-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors"
+                          title="Download PNG"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                        <div
+                          className="mb-4 mt-2 cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => setZoomedCard(card)}
+                        >
+                          {card.status === "occupied" ? (
+                            <div className="relative">
+                              <div className="grayscale opacity-40">
+                                <QRCodeSVG value={`${window.location.origin}/v/${card.qr_token}`} size={84} />
+                              </div>
+                              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                <span className="text-xs font-bold text-gray-700 bg-white/80 px-2 py-0.5 rounded">
+                                  Assigned
+                                </span>
+                                {card.assigned_car_plate && (
+                                  <span className="text-[10px] font-semibold text-gray-800 bg-white/80 px-1 py-0.5 rounded mt-1 w-[80px] whitespace-normal text-center leading-tight">
+                                    {card.assigned_car_plate}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <QRCodeSVG value={`${window.location.origin}/v/${card.qr_token}`} size={84} />
+                          )}
+                        </div>
+                        <div className="text-xl font-bold font-heading text-[#0F2044] mb-2">
+                          #{card.key_tag_number} <span className="text-gray-400 font-normal px-1">·</span> Code {card.card_code}
+                        </div>
+                        <div className="flex flex-col items-center gap-2">
+                          {card.status !== "occupied" && card.status !== "empty" && (
+                            <span className={`px-2 py-1 text-[10px] sm:text-xs font-bold text-white rounded-full ${sc.bg}`}>
+                              {sc.text}
+                            </span>
+                          )}
+                          {(card.status === "pending_incident" || card.status === "blocked") && (
+                            <button
+                              onClick={() => {
+                                setSelectedIncidentCard(card);
+                                setLoadingQrHistory(true);
+                                api.get(`/qr-card-incidents?provider_id=${hotel.provider_id}&key_tag_number=${card.key_tag_number}`)
+                                  .then(r => setQrIncidentHistory(r.data))
+                                  .catch(() => toast.error("Failed to load history"))
+                                  .finally(() => setLoadingQrHistory(false));
+                              }}
+                              className="text-xs font-bold text-[#F59E0B] hover:underline mt-1"
+                            >
+                              View Incident
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {filteredQrCards.length > QR_PAGE_SIZE && (
+                  <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between shrink-0 bg-white">
+                    <span className="text-sm text-gray-500">
+                      Showing {(qrPage - 1) * QR_PAGE_SIZE + 1}–{Math.min(qrPage * QR_PAGE_SIZE, filteredQrCards.length)} of {filteredQrCards.length}
+                    </span>
+                    <Pagination currentPage={qrPage} totalItems={filteredQrCards.length} pageSize={QR_PAGE_SIZE} onPageChange={setQrPage} />
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}

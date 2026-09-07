@@ -39,7 +39,7 @@ export default function Hotels() {
   const [form, setForm] = useState({
     name: "", email: "", phone: "", password: "", plan: "starter",
     address: "", city: "", state: "", logo_url: "",
-    total_valet_slots: "", contact_person_name: "", contact_person_phone: "", gate_timer_minutes: "5", allow_instant_park: false
+    total_valet_slots: "", contact_person_name: "", contact_person_phone: "", gate_timer_minutes: "5"
   });
 
   const totalSlots = useMemo(() => zones.reduce((sum, z) => sum + (parseInt(z.slots) || 0), 0), [zones]);
@@ -97,7 +97,8 @@ export default function Hotels() {
         name: form.name, email: form.email, phone: form.phone,
         plan: form.plan, password: generateTempPassword(),
         address: form.address, city: form.city, state: form.state,
-        provider_type: "hotel_owner"
+        provider_type: "hotel_owner",
+        max_cars: parseInt(form.total_valet_slots) || 0
       });
       try {
         await api.post("/hotels", {
@@ -107,7 +108,6 @@ export default function Hotels() {
           contact_person_email: form.email,
           total_valet_slots: parseInt(form.total_valet_slots),
           gate_timer_minutes: form.gate_timer_minutes ? parseInt(form.gate_timer_minutes) : 5,
-          allow_instant_park: !!form.allow_instant_park,
           hotel_photo: form.logo_url || null,
           provider_id: newProvider.id,
           zones: zones.map(z => ({ name: z.name.trim(), slots: parseInt(z.slots) || 0 })).filter(z => z.name),
@@ -125,7 +125,7 @@ export default function Hotels() {
         console.error("Hotel setup failed for new provider", newProvider.id, hotelErr);
       }
       setCreated(newProvider);
-      setForm({ name: "", email: "", phone: "", password: "", plan: "starter", address: "", city: "", state: "", logo_url: "", total_valet_slots: "", contact_person_name: "", contact_person_phone: "", gate_timer_minutes: "5", allow_instant_park: false });
+      setForm({ name: "", email: "", phone: "", password: "", plan: "starter", address: "", city: "", state: "", logo_url: "", total_valet_slots: "", contact_person_name: "", contact_person_phone: "", gate_timer_minutes: "5" });
       setZones([{ name: "A", slots: "" }]);
       setGates(["Main Gate"]);
       setHotelPhotoPreview(null);
@@ -472,14 +472,7 @@ export default function Hotels() {
                                className={`mt-1 w-full px-3 py-2 rounded-xl border ${errors.gate_timer_minutes ? "border-red-400" : "border-gray-200"} outline-none focus:border-[#1D4ED8]`} />
 { errors.gate_timer_minutes && <p className="text-[11px] text-red-500 mt-1 font-medium">* {errors.gate_timer_minutes}</p> }
                       </div>
-                      <div className="flex items-center gap-2 mt-4">
-                        <input type="checkbox" id="allow_instant_park" checked={form.allow_instant_park}
-                               onChange={(e) => setForm({ ...form, allow_instant_park: e.target.checked })}
-                               className="w-4 h-4 text-[#1D4ED8] bg-gray-100 border-gray-300 rounded focus:ring-[#1D4ED8]" />
-                        <label htmlFor="allow_instant_park" className="text-xs font-semibold text-gray-600 uppercase cursor-pointer">
-                          Allow Instant Park for this hotel's daily events
-                        </label>
-                      </div>
+                      
                       <div>
                         <label className="text-xs font-semibold text-gray-600 uppercase">Contact Name <span className="text-red-500">*</span></label>
                         <input ref={el => { if (fieldRefs.current) fieldRefs.current.contact_person_name = el; }}  type="text" value={form.contact_person_name}

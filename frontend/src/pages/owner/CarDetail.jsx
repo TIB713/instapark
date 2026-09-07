@@ -22,9 +22,9 @@ function VisitTimelineFetcher({ carId, setLightbox }) {
   return <CarLogTimeline log={log} setLightbox={setLightbox} />;
 }
 
-export default function CarDetail() { 
-  const { plate } = useParams(); 
-  const decodedPlate = decodeURIComponent(plate).toUpperCase(); 
+export default function OwnerCarDetail() { 
+  const { plate, carId } = useParams(); 
+  const decodedPlate = plate ? decodeURIComponent(plate).toUpperCase() : null; 
   const [data, setData] = useState(null); 
   const [loading, setLoading] = useState(true); 
   const [expandedVisit, setExpandedVisit] = useState(null); 
@@ -44,7 +44,10 @@ export default function CarDetail() {
   }, [lightbox]);
 
   useEffect(() => { 
-    api.get(`/provider/cars/${encodeURIComponent(decodedPlate)}/history`) 
+    const historyUrl = carId
+      ? `/provider/cars/id/${carId}/history`
+      : `/provider/cars/${encodeURIComponent(decodedPlate)}/history`;
+    api.get(historyUrl) 
       .then(async r => {
         setData(r.data);
         const carIds = r.data.visits.map(v => v.car_id); 
@@ -63,7 +66,7 @@ export default function CarDetail() {
       }) 
       .catch(() => toast.error("Failed to load car history")) 
       .finally(() => setLoading(false)); 
-  }, [decodedPlate]); 
+  }, [decodedPlate, carId]); 
 
   const generateCarPDF = async () => {
     try {
@@ -341,7 +344,7 @@ export default function CarDetail() {
           <div className="max-w-xs w-full mx-auto md:mx-0">
             <div className="bg-white border-2 border-blue-700 rounded-lg px-4 py-3 text-center">
               <div className="font-mono-plate text-3xl font-bold tracking-widest text-[#0F2044]">
-                {data.plate}
+                {data.plate || (data?.has_plate_issue ? "No Plate / TC" : "")}
               </div>
             </div>
           </div>
@@ -374,7 +377,7 @@ export default function CarDetail() {
       <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-6 flex items-start gap-2"> 
         <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" /> 
         <p className="text-xs text-amber-800 font-medium"> 
-          This record contains complete valet history for plate <strong>{data.plate}</strong>. 
+          This record contains complete valet history for plate <strong>{data.plate || (data?.has_plate_issue ? "No Plate / TC" : "")}</strong>. 
           All data is timestamped and driver-attributed. Available for law enforcement or legal purposes upon request. 
         </p> 
       </div> 
