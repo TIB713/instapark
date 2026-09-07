@@ -1,7 +1,7 @@
 """InstaPark Valet Parking Management Backend."""
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Form, WebSocket, WebSocketDisconnect, Query, Body, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -15,9 +15,7 @@ import os, uuid, logging, asyncio, bcrypt, jwt, requests, smtplib, re, random, t
 from pymongo.errors import DuplicateKeyError
 import static_ffmpeg
 from email.mime.text import MIMEText 
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
-import base64
+from email.mime.multipart import MIMEMultipart 
 from email.utils import make_msgid
 import cloudinary
 import cloudinary.uploader
@@ -180,7 +178,7 @@ def _html_to_text(html_body: str) -> str:
     text = re.sub(r'<[^>]+>', ' ', html_body)
     return re.sub(r'\s+', ' ', text).strip()
 
-def _send_smtp(to: str, subject: str, html_body: str, attachments: list = None):
+def _send_smtp(to: str, subject: str, html_body: str):
     if not SMTP_USER or not SMTP_PASS:
         logger.info(f"[EMAIL STUB] To: {to} | Subject: {subject}")
         logger.info(f"[EMAIL STUB] Body: {html_body[:200]}...")
@@ -193,11 +191,6 @@ def _send_smtp(to: str, subject: str, html_body: str, attachments: list = None):
     msg["Message-ID"] = make_msgid()
     msg.attach(MIMEText(_html_to_text(html_body), "plain"))
     msg.attach(MIMEText(html_body, "html"))
-    if attachments:
-        for att in attachments:
-            part = MIMEApplication(base64.b64decode(att["content"]), Name=att["filename"])
-            part['Content-Disposition'] = f'attachment; filename="{att["filename"]}"'
-            msg.attach(part)
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
         server.ehlo()
         server.starttls()
@@ -205,18 +198,15 @@ def _send_smtp(to: str, subject: str, html_body: str, attachments: list = None):
         server.sendmail(SMTP_USER, to, msg.as_string())
     logger.info(f"[EMAIL SENT] To: {to} | Subject: {subject}")
 
-async def send_email(to: str, subject: str, html_body: str, attachments: list = None):
+async def send_email(to: str, subject: str, html_body: str):
     if RESEND_API_KEY:
         try:
             import httpx
             async with httpx.AsyncClient() as client_http:
-                payload = {"from": EMAIL_FROM, "to": [to], "subject": subject, "html": html_body}
-                if attachments:
-                    payload["attachments"] = attachments
                 resp = await client_http.post(
                     "https://api.resend.com/emails",
                     headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-                    json=payload,
+                    json={"from": EMAIL_FROM, "to": [to], "subject": subject, "html": html_body},
                     timeout=10
                 )
                 if resp.status_code not in (200, 201):
@@ -226,7 +216,7 @@ async def send_email(to: str, subject: str, html_body: str, attachments: list = 
     else:
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(None, _send_smtp, to, subject, html_body, attachments)
+            await loop.run_in_executor(None, _send_smtp, to, subject, html_body)
         except Exception as e:
             logger.error(f"[EMAIL ERROR] To: {to} | Error: {e}")
 
@@ -859,7 +849,7 @@ async def first_login_send_otp(body: dict = Body(...)):
     
     # send email
     email = account.get("email")
-    if not email and account.get("provider_id") and collection != "drivers":
+    if not email and account.get("provider_id"):
         provider = await db.providers.find_one({"id": account["provider_id"]})
         email = provider.get("email") if provider else None
         
@@ -1417,13 +1407,6 @@ IFSC_RE     = re.compile(r'^[A-Z]{4}0[A-Z0-9]{6}$')
 AADHAR_RE   = re.compile(r'^\d{12}$')
 BANK_RE     = re.compile(r'^\d{9,18}$')
 DL_RE       = re.compile(r'^[A-Z0-9]{10,16}$')
-PLATE_RE    = re.compile(r'^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{1,4}$')
-PLATE_BH_RE = re.compile(r'^[0-9]{2}BH[0-9]{4}[A-Z]{1,2}$')
-
-def validate_plate_format(plate: str):
-    p = plate.replace("-", "").replace(" ", "")
-    if not (PLATE_RE.match(p) or PLATE_BH_RE.match(p)):
-        raise HTTPException(400, "Invalid number plate format. Use standard (GJ01AB1234) or BH series (22BH1234AA).")
 
 
 @api_router.get("/providers/me/stats")
@@ -1446,7 +1429,7 @@ async def my_provider_stats(user=Depends(require_roles("owner", "admin"))):
         today_events, today_cars, today_parked, today_retrievals, today_retrieved,
     ) = await asyncio.gather(
         db.hotels.count_documents({"provider_id": pid}),
-        db.events.count_documents({"provider_id": pid, "status": {"$in": ["upcoming", "active"]}}),
+        db.events.count_documents({"provider_id": pid, "status": "active"}),
         db.drivers.count_documents({"provider_id": pid, "role": "driver"}),
         db.drivers.count_documents({"provider_id": pid, "role": "supervisor"}),
         db.cars.count_documents(car_match),
@@ -1475,7 +1458,7 @@ async def my_provider_stats(user=Depends(require_roles("owner", "admin"))):
     hotels_breakdown = []
     for h in hotels:
         h_event_ids = [e["id"] for e in await db.events.find({"hotel_id": h["id"]}, {"_id": 0, "id": 1}).to_list(10000)]
-        h_active_events = await db.events.count_documents({"hotel_id": h["id"], "status": {"$in": ["upcoming", "active"]}})
+        h_active_events = await db.events.count_documents({"hotel_id": h["id"], "status": "active"})
         h_cars_today = await db.cars.count_documents({"event_id": {"$in": h_event_ids}, "check_in_time": today_range, "deleted": {"$ne": True}})
         h_total_cars = await db.cars.count_documents({"event_id": {"$in": h_event_ids}, "deleted": {"$ne": True}})
         hotels_breakdown.append({
@@ -1883,7 +1866,7 @@ async def toggle_provider_active(id: str, user=Depends(require_roles("superadmin
     
     if new_active is False:
         await db.events.update_many(
-            {"provider_id": id, "status": {"$in": ["upcoming", "active"]}},
+            {"provider_id": id, "status": "active"},
             {"$set": {"status": "closed", "updated_at": now_iso(), "auto_closed_by_provider_toggle": True}}
         )
         await db.drivers.update_many(
@@ -1893,7 +1876,7 @@ async def toggle_provider_active(id: str, user=Depends(require_roles("superadmin
     else:
         await db.events.update_many(
             {"provider_id": id, "auto_closed_by_provider_toggle": True},
-            {"$set": {"status": "upcoming", "updated_at": now_iso()}, "$unset": {"auto_closed_by_provider_toggle": ""}}
+            {"$set": {"status": "active", "updated_at": now_iso()}, "$unset": {"auto_closed_by_provider_toggle": ""}}
         )
         await db.drivers.update_many(
             {"provider_id": id, "auto_deactivated_by_provider_toggle": True},
@@ -2141,10 +2124,7 @@ async def get_provider_qr_cards(pid: str, search: Optional[str] = None, user=Dep
     
     q = {"provider_id": pid, "is_active": {"$ne": False}}
     if search and search.isdigit():
-        q["$or"] = [
-            {"$expr": {"$regexMatch": {"input": {"$toString": "$key_tag_number"}, "regex": search}}},
-            {"$expr": {"$regexMatch": {"input": {"$toString": "$card_code"}, "regex": search}}},
-        ]
+        q["$expr"] = {"$regexMatch": {"input": {"$toString": "$key_tag_number"}, "regex": search}}
         
     cards_cursor = db.car_qr_cards.find(q, {"_id": 0}).sort("key_tag_number", 1)
     cards = await cards_cursor.to_list(length=5000)
@@ -2165,10 +2145,7 @@ async def get_my_qr_cards(search: Optional[str] = None, user=Depends(require_rol
     
     q = {"provider_id": pid, "is_active": {"$ne": False}}
     if search and search.isdigit():
-        q["$or"] = [
-            {"$expr": {"$regexMatch": {"input": {"$toString": "$key_tag_number"}, "regex": search}}},
-            {"$expr": {"$regexMatch": {"input": {"$toString": "$card_code"}, "regex": search}}},
-        ]
+        q["$expr"] = {"$regexMatch": {"input": {"$toString": "$key_tag_number"}, "regex": search}}
         
     cards_cursor = db.car_qr_cards.find(q, {"_id": 0}).sort("key_tag_number", 1)
     cards = await cards_cursor.to_list(length=5000)
@@ -2484,7 +2461,7 @@ async def list_drivers(user=Depends(get_current)):
         if assignments:
             event_ids = list({a["event_id"] for a in assignments})
             events = await db.events.find(
-                {"id": {"$in": event_ids}, "status": {"$in": ["upcoming", "active"]}},
+                {"id": {"$in": event_ids}, "status": "active"},
                 {"_id": 0, "id": 1, "name": 1, "date": 1, "end_date": 1}
             ).to_list(5000)
             events_by_id = {e["id"]: e for e in events}
@@ -3120,7 +3097,6 @@ async def get_hotel_events(
         e["available_slots"] = max(0, e.get("max_cars", 0) - occ["occupied"])
         e["carried_forward_count"] = occ["carried_forward"]
     
-    events = [enrich_event_lifecycle(e) for e in events]
     return {
         "events": [clean(e) for e in events],
         "total": total,
@@ -3173,19 +3149,17 @@ async def get_hotel_cars(hid: str, user=Depends(require_roles("owner", "admin", 
         {"$match": {"event_id": {"$in": event_ids}, "deleted": {"$ne": True}}},
         {"$sort": {"check_in_time": -1}},
         {"$group": {
-            "_id": {"$cond": [{"$eq": ["$has_plate_issue", True]}, "$id", "$plate"]},
-            "car_id": {"$first": "$id"},
+            "_id": "$plate",
             "plate": {"$first": "$plate"},
             "make": {"$first": "$make"},
             "color": {"$first": "$color"},
-            "has_plate_issue": {"$first": "$has_plate_issue"},
             "total_visits": {"$sum": 1},
             "last_seen": {"$first": "$check_in_time"},
             "last_event_id": {"$first": "$event_id"},
             "has_active": {"$max": {"$cond": [{"$ne": ["$status", "DELIVERED"]}, 1, 0]}},
         }},
         {"$project": {
-            "_id": 0, "car_id": 1, "plate": 1, "make": 1, "color": 1, "has_plate_issue": 1,
+            "_id": 0, "plate": 1, "make": 1, "color": 1,
             "total_visits": 1, "last_seen": 1, "last_event_id": 1,
             "has_active": {"$eq": ["$has_active", 1]},
         }},
@@ -3789,7 +3763,7 @@ async def list_supervisors(user=Depends(require_roles("owner", "admin", "superad
         if assignments:
             event_ids = list({a["event_id"] for a in assignments})
             events = await db.events.find(
-                {"id": {"$in": event_ids}, "status": {"$in": ["upcoming", "active"]}},
+                {"id": {"$in": event_ids}, "status": "active"},
                 {"_id": 0, "id": 1, "name": 1, "date": 1, "end_date": 1}
             ).to_list(5000)
             events_by_id = {e["id"]: e for e in events}
@@ -4274,7 +4248,6 @@ async def list_events(user=Depends(get_current)):
         e["available_slots"] = max(0, e.get("max_cars", 0) - occ["occupied"])
         e["carried_forward_count"] = occ["carried_forward"]
         
-    events = [enrich_event_lifecycle(e) for e in events]
     return [clean(e) for e in events]
 
 @api_router.get("/events/all")
@@ -4314,38 +4287,37 @@ def event_time_range(date_str, start_time, end_date_str, end_time):
     end_dt = datetime.strptime(f"{end_date_str} {end_time}", "%Y-%m-%d %H:%M")
     return start_dt, end_dt
 
-def event_checkin_opens_at(event: dict) -> datetime:
-    """Returns the tz-aware (Asia/Kolkata) datetime at which an event's check-in window
-    opens (i.e. the event's date + start_time). Raises ValueError if date/start_time
-    on the event are missing or unparseable — callers should catch this."""
+def event_checkin_opens_at(event: dict):
     from zoneinfo import ZoneInfo
     date_str = event.get("date", "")
     start_time = event.get("start_time", "00:00")
-    dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
-    return dt.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-
-def compute_event_status(event: dict, now_ist=None) -> str:
-    from zoneinfo import ZoneInfo
-    if now_ist is None:
-        now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-    
     try:
-        opens_at = event_checkin_opens_at(event)
+        dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+        return dt.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
     except Exception:
-        date_str = event.get("date", "")
-        start_time = event.get("start_time", "00:00")
-        logger.warning(f"compute_event_status: unparseable date/start_time on event {event.get('id')} (date={date_str!r}, start_time={start_time!r})")
-        event["data_error"] = True
-        return "upcoming"
-        
-    if now_ist >= opens_at - timedelta(minutes=30):
-        return "active"
-    return "upcoming"
+        from datetime import timezone, datetime
+        # Fall back to a date safely in the past (not datetime.min) so that
+        # `opens_at - timedelta(minutes=30)` in enrich_event_lifecycle can never
+        # underflow, and events with missing/malformed date fields are treated
+        # as already past their check-in window (i.e. not blocked as "upcoming")
+        # rather than crashing the whole request.
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
 
 def enrich_event_lifecycle(event: dict) -> dict:
-    status = event.get("status", "upcoming")
-    event["lifecycle_state"] = status
-    event["is_checkin_open"] = (status == "active")
+    from zoneinfo import ZoneInfo
+    if event.get("status") == "active":
+        now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+        opens_at = event_checkin_opens_at(event)
+        if now_ist < opens_at - timedelta(minutes=30):
+            event["lifecycle_state"] = "upcoming"
+            event["is_checkin_open"] = False
+        else:
+            event["lifecycle_state"] = "active"
+            event["is_checkin_open"] = True
+    else:
+        event["lifecycle_state"] = event.get("status")
+        event["is_checkin_open"] = False
     return event
 
 
@@ -4360,7 +4332,7 @@ async def get_car_limit_ceiling_and_scope(provider_id: str, hotel_id: Optional[s
     if hotel_id:
         hotel = await db.hotels.find_one({"id": hotel_id}, {"_id": 0, "max_cars": 1})
         ceiling = hotel.get("max_cars", 0) if hotel else 0
-        scope_filter = {"provider_id": provider_id, "hotel_id": hotel_id, "status": {"$in": ["upcoming", "active"]}, "is_template": {"$ne": True}}
+        scope_filter = {"provider_id": provider_id, "hotel_id": hotel_id, "status": "active", "is_template": {"$ne": True}}
     else:
         provider_max_cars = provider.get("max_cars", 0)
         hotels_agg = await db.hotels.aggregate([
@@ -4369,7 +4341,7 @@ async def get_car_limit_ceiling_and_scope(provider_id: str, hotel_id: Optional[s
         ]).to_list(1)
         hotels_total = hotels_agg[0]["total"] if hotels_agg else 0
         ceiling = provider_max_cars - hotels_total
-        scope_filter = {"provider_id": provider_id, "hotel_id": None, "status": {"$in": ["upcoming", "active"]}, "is_template": {"$ne": True}}
+        scope_filter = {"provider_id": provider_id, "hotel_id": None, "status": "active", "is_template": {"$ne": True}}
 
     return ceiling, scope_filter
 
@@ -4407,6 +4379,7 @@ async def create_event(body: EventCreate, user=Depends(require_roles("owner", "a
         existing_count = await db.events.count_documents({
             "provider_id": pid,
             "event_type": "regular",
+            "status": "active",
             "is_template": {"$ne": True},
         })
         if existing_count >= max_events:
@@ -4446,25 +4419,10 @@ async def create_event(body: EventCreate, user=Depends(require_roles("owner", "a
     if not doc.get("live_queue_token"):
         doc["live_queue_token"] = str(uuid.uuid4())
 
-    initial_status = compute_event_status(doc)
-    doc.update({"id": eid, "provider_id": pid, "status": initial_status,
-                "manually_activated": False,
-                "manually_activated_at": None,
-                "manually_activated_by": None,
+    doc.update({"id": eid, "provider_id": pid, "status": "active",
                 "key_hooks": body.key_hooks,
                 "created_at": now_iso(), "updated_at": now_iso()})
     await db.events.insert_one(doc.copy())
-
-    if provider and provider.get("provider_type") == "valet_provider":
-        post_count = await db.events.count_documents({
-            "provider_id": pid,
-            "event_type": "regular",
-            "is_template": {"$ne": True},
-        })
-        if post_count > provider.get("max_events", 0):
-            await db.events.delete_one({"id": eid})
-            raise HTTPException(400, "Event limit reached for this provider")
-
     return clean(doc)
 
 @api_router.post("/hotels/{hid}/events")
@@ -4505,17 +4463,13 @@ async def create_hotel_special_event(hid: str, body: EventCreate, user=Depends(r
 
     eid = str(uuid.uuid4())
     doc = body.model_dump()
-    initial_status = compute_event_status(doc)
     doc.update({
         "id": eid,
         "provider_id": hotel["provider_id"],
         "hotel_id": hid,
         "event_type": "hotel_special",
         "venue": hotel["name"],
-        "status": initial_status,
-        "manually_activated": False,
-        "manually_activated_at": None,
-        "manually_activated_by": None,
+        "status": "active",
         "event_qr_token": str(uuid.uuid4()),
         "live_queue_token": str(uuid.uuid4()),
         "created_at": now_iso(),
@@ -4582,22 +4536,6 @@ async def clone_event(
     if not source:
         raise HTTPException(404, "Event not found")
 
-    pid = source.get("provider_id")
-    provider = None
-    if pid:
-        provider = await db.providers.find_one({"id": pid}, {"_id": 0, "provider_type": 1, "max_events": 1})
-        if provider and provider.get("provider_type") == "valet_provider":
-            max_events = provider.get("max_events", 0)
-            if max_events == 0:
-                raise HTTPException(400, "Event limit not configured for this provider — contact support")
-            existing_count = await db.events.count_documents({
-                "provider_id": pid,
-                "event_type": "regular",
-                "is_template": {"$ne": True},
-            })
-            if existing_count >= max_events:
-                raise HTTPException(400, "Event limit reached for this provider")
-
     new_id = str(uuid.uuid4())
     cloned = {**source}
     cloned["id"] = new_id
@@ -4614,16 +4552,6 @@ async def clone_event(
     cloned["total_cars"] = 0
 
     await db.events.insert_one(cloned)
-
-    if provider and provider.get("provider_type") == "valet_provider":
-        post_count = await db.events.count_documents({
-            "provider_id": pid,
-            "event_type": "regular",
-            "is_template": {"$ne": True},
-        })
-        if post_count > provider.get("max_events", 0):
-            await db.events.delete_one({"id": new_id})
-            raise HTTPException(400, "Event limit reached for this provider")
 
     # Clone the slots from the source event
     source_slots = await db.slots.find(
@@ -4649,7 +4577,7 @@ async def get_event(eid: str, user=Depends(get_current)):
     e = await db.events.find_one({"id": eid}, {"_id": 0})
     if not e:
         raise HTTPException(404, "Not found")
-    return enrich_event_lifecycle(e)
+    return e
 
 @api_router.get("/superadmin/events/{eid}/detail")
 async def get_event_detail(eid: str, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor", "driver"))):
@@ -4723,7 +4651,7 @@ async def get_event_detail(eid: str, user=Depends(require_roles("owner", "admin"
                 {"id": {"$in": hotel_sup["assigned_supervisor_ids"]}, "role": "supervisor", "is_active": True},
                 SAFE_DRIVER_PROJ
             ).to_list(1000)
-    other_events = await db.events.find({"provider_id": pid, "status": {"$in": ["upcoming", "active"]}, "id": {"$ne": eid}}, {"_id": 0}).to_list(1000)
+    other_events = await db.events.find({"provider_id": pid, "status": "active", "id": {"$ne": eid}}, {"_id": 0}).to_list(1000)
     assignments = {a["driver_id"]: a for a in await db.event_drivers.find({"event_id": {"$in": [e["id"] for e in other_events]}}, {"_id": 0}).to_list(2000)}
     e_start = f'{event["date"]}T{event.get("start_time","00:00")}'
     e_end = f'{event["end_date"]}T{event.get("end_time","23:59")}'
@@ -4880,10 +4808,9 @@ async def reopen_event(eid: str, user=Depends(require_roles("owner", "admin", "s
     if event.get("status") != "closed":
         raise HTTPException(400, "Event is not closed")
 
-    new_status = compute_event_status(event)
     await db.events.update_one(
         {"id": eid},
-        {"$set": {"status": new_status, "updated_at": now_iso()},
+        {"$set": {"status": "active", "updated_at": now_iso()},
          "$unset": {"auto_close_reminder_sent_at": ""}}
     )
 
@@ -4909,34 +4836,6 @@ async def reopen_event(eid: str, user=Depends(require_roles("owner", "admin", "s
 
     return {"ok": True}
 
-@api_router.post("/events/{eid}/activate")
-async def activate_event_early(eid: str, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))):
-    event = await db.events.find_one({"id": eid}, {"_id": 0})
-    if not event:
-        raise HTTPException(404, "Event not found")
-    if user.get("role") in ("owner", "admin", "supervisor") and event["provider_id"] != user.get("provider_id"):
-        raise HTTPException(403, "Forbidden — event belongs to a different provider")
-    if event.get("status") != "upcoming":
-        raise HTTPException(400, f"Event is '{event.get('status')}' — cannot activate manually")
-    if event.get("manually_activated"):
-        raise HTTPException(400, "Event is already manually activated")
-
-    await db.events.update_one(
-        {"id": eid},
-        {"$set": {
-            "status": "active",
-            "manually_activated": True,
-            "manually_activated_at": now_iso(),
-            "manually_activated_by": user.get("user_id"),
-            "activation_type": "manual",
-            "updated_at": now_iso(),
-        }}
-    )
-    if "provider_id" in event:
-        await manager.broadcast(f"provider:{event['provider_id']}", {"type": "event_activated", "event_id": eid})
-    await manager.broadcast(f"event:{eid}", {"type": "event_activated", "event_id": eid})
-    return {"ok": True}
-
 @api_router.post("/events/{eid}/close")
 async def close_event(eid: str, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))):
     event = await db.events.find_one({"id": eid}, {"_id": 0, "event_type": 1}) 
@@ -4948,12 +4847,6 @@ async def close_event(eid: str, user=Depends(require_roles("owner", "admin", "su
             raise HTTPException(403, "Forbidden — event belongs to a different provider")
     await db.events.update_one({"id": eid}, {"$set": {"status": "closed", "updated_at": now_iso()}})
     await db.parking_slots.delete_many({"event_id": eid})
-    
-    # Trigger auto report email
-    updated_event = await db.events.find_one({"id": eid})
-    if updated_event:
-        asyncio.create_task(_trigger_auto_report_email(updated_event))
-        
     return {"ok": True}
 
 @api_router.get("/events/{eid}/stats")
@@ -5209,150 +5102,9 @@ async def get_event_keys(
         "hooks_full": in_booth >= total_hooks,
     }
 
-def _ist(iso_str):
-    """Format an ISO datetime string in IST as 'DD Mon YYYY, HH:MM'. Returns '—' if empty/invalid."""
-    if not iso_str:
-        return "—"
-    try:
-        dt = datetime.fromisoformat(iso_str) + timedelta(hours=5, minutes=30)
-        return dt.strftime("%d %b %Y, %H:%M")
-    except Exception:
-        return "—"
-
-def _fmt_dur(mins):
-    """Mirror the frontend's fmtDuration: '<45 min' or '1h 20m'."""
-    if mins is None:
-        return "—"
-    m = max(0, int(mins))
-    if m < 60:
-        return f"{m} min"
-    h, rem = divmod(m, 60)
-    return f"{h}h {rem}m"
-
-def _render_event_report_html(data: dict) -> str:
-    e, s = data["event"], data["summary"]
-
-    car_rows = "".join(f"""
-      <tr>
-        <td style="padding:8px 10px;font-weight:700;">{c['plate']}</td>
-        <td style="padding:8px 10px;">{(c['color'] + ' ' + c['make']).strip()}</td>
-        <td style="padding:8px 10px;">{c['status']}</td>
-        <td style="padding:8px 10px;">{c['check_in_driver'] or '—'}</td>
-        <td style="padding:8px 10px;">{c['retrieval_driver'] or '—'}</td>
-        <td style="padding:8px 10px;">{_fmt_dur(c['duration_minutes'])}</td>
-        <td style="padding:8px 10px;">{'⭐' * c['rating'] if c['rating'] else '—'}</td>
-        <td style="padding:8px 10px;font-size:11px;">{c['notes'] or '—'}</td>
-      </tr>""" for c in data["cars"])
-
-    driver_rows = "".join(f"""
-      <tr>
-        <td style="padding:8px 10px;font-weight:700;">{d['name']}</td>
-        <td style="padding:8px 10px;">{d['employee_id']}</td>
-        <td style="padding:8px 10px;text-align:center;">{d['checkins']}</td>
-        <td style="padding:8px 10px;text-align:center;">{d['retrievals']}</td>
-        <td style="padding:8px 10px;text-align:center;color:{'#ef4444' if d['incidents'] > 0 else '#6b7280'};">{d['incidents']}</td>
-      </tr>""" for d in data["drivers"])
-
-    if data["incidents"]:
-        incident_rows = "".join(f"""
-          <tr>
-            <td style="padding:8px 10px;font-weight:700;">{i.get('plate','—')}</td>
-            <td style="padding:8px 10px;">{i.get('reported_by') or i.get('driver_name') or '—'}</td>
-            <td style="padding:8px 10px;">{i.get('description','')}</td>
-            <td style="padding:8px 10px;font-size:11px;color:#6b7280;">{_ist(i.get('created_at'))}</td>
-          </tr>""" for i in data["incidents"])
-    else:
-        incident_rows = '<tr><td colspan="4" style="padding:16px;text-align:center;color:#9ca3af;">No incidents reported</td></tr>'
-
-    incidents_color = "#ef4444" if s["total_incidents"] > 0 else "#059669"
-
-    return f"""<!DOCTYPE html><html><head>
-    <meta charset="UTF-8">
-    <title>{e['name']} — Event Report</title>
-    <style>
-      *{{margin:0;padding:0;box-sizing:border-box;}}
-      body{{font-family:Arial,sans-serif;color:#111827;}}
-      .header{{background:#7C3AED;color:white;padding:32px 40px;}}
-      .header h1{{font-size:28px;font-weight:900;}}
-      .header p{{opacity:0.8;margin-top:4px;font-size:14px;}}
-      .section{{padding:28px 40px;border-bottom:1px solid #f3f4f6;}}
-      .section h2{{font-size:13px;font-weight:800;color:#7C3AED;letter-spacing:3px;margin-bottom:16px;}}
-      .stats-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}}
-      .stat-card{{background:#f9fafb;border-radius:12px;padding:16px;text-align:center;}}
-      .stat-value{{font-size:28px;font-weight:900;color:#111827;}}
-      .stat-label{{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:1px;}}
-      table{{width:100%;border-collapse:collapse;font-size:13px;}}
-      thead tr{{background:#f9fafb;}}
-      th{{padding:10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;font-weight:700;}}
-      .footer{{padding:20px 40px;text-align:center;color:#9ca3af;font-size:12px;}}
-    </style></head><body>
-    <div class="header">
-      <h1>{e['name']}</h1>
-      <p>{e['date']} {"· " + e['start_time'] + " to " + e['end_time'] if e['start_time'] else ""} {"· " + e['venue'] if e['venue'] else ""}</p>
-      <p style="margin-top:8px;font-size:12px;opacity:0.6;">Generated on {_ist(datetime.now(timezone.utc).isoformat())} IST</p>
-    </div>
-    <div class="section">
-      <h2>EVENT SUMMARY</h2>
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-value">{s['total_cars']}</div><div class="stat-label">Total Cars</div></div>
-        <div class="stat-card"><div class="stat-value">{s['pre_registered']}</div><div class="stat-label">Pre-Registered</div></div>
-        <div class="stat-card"><div class="stat-value">{s['walk_in']}</div><div class="stat-label">Walk-in</div></div>
-        <div class="stat-card"><div class="stat-value">{s['delivered']}</div><div class="stat-label">Delivered</div></div>
-        <div class="stat-card"><div class="stat-value">{s['still_parked']}</div><div class="stat-label">Still Parked</div></div>
-        <div class="stat-card"><div class="stat-value">{s['avg_retrieval_minutes']}m</div><div class="stat-label">Avg Retrieval</div></div>
-        <div class="stat-card"><div class="stat-value">{(str(s['platform_avg_rating']) + '★') if s['platform_avg_rating'] > 0 else '—'}</div><div class="stat-label">Platform Rating</div></div>
-        <div class="stat-card"><div class="stat-value">{_fmt_dur(s['avg_duration_minutes'])}</div><div class="stat-label">Avg Duration</div></div>
-        <div class="stat-card"><div class="stat-value">{s['total_drivers']}</div><div class="stat-label">Drivers</div></div>
-        <div class="stat-card"><div class="stat-value">{s['active']}</div><div class="stat-label">Still Active</div></div>
-        <div class="stat-card"><div class="stat-value">{s['peak_hour'] or '—'}</div><div class="stat-label">Peak Hour</div></div>
-        <div class="stat-card" style="color:{incidents_color}"><div class="stat-value">{s['total_incidents']}</div><div class="stat-label">Incidents</div></div>
-      </div>
-    </div>
-    <div class="section">
-      <h2>DRIVER PERFORMANCE</h2>
-      <table><thead><tr><th>Driver</th><th>Employee ID</th><th>Check-ins</th><th>Retrievals</th><th>Incidents</th></tr></thead>
-      <tbody>{driver_rows}</tbody></table>
-    </div>
-    <div class="section">
-      <h2>INCIDENT REPORTS</h2>
-      <table><thead><tr><th>Plate</th><th>Driver</th><th>Description</th><th>Time</th></tr></thead>
-      <tbody>{incident_rows}</tbody></table>
-    </div>
-    <div class="section">
-      <h2>ALL VEHICLES ({s['total_cars']})</h2>
-      <table><thead><tr><th>Plate</th><th>Vehicle</th><th>Status</th><th>Check-in By</th><th>Retrieved By</th><th>Duration</th><th>Rating</th><th>Notes</th></tr></thead>
-      <tbody>{car_rows}</tbody></table>
-    </div>
-    <div class="footer">InstaPark — Smart Valet Operations · {e['name']}</div>
-    </body></html>"""
-
-def _render_event_report_csv(data: dict) -> str:
-    e, s = data["event"], data["summary"]
-    headers = [
-        "Plate", "Make", "Color", "Status", "Gate", "Zone", "Slot",
-        "Key Tag", "Guest Name", "Guest Phone", "Check-in Time (IST)",
-        "Parked At (IST)", "Delivered At (IST)", "Duration",
-        "Retrieval Time (min)", "Check-in Driver", "Parked Driver",
-        "Retrieval Driver", "Platform Rating", "Notes",
-        "Pre-registered", "Walk-in", "Peak Hour", "Still Parked",
-    ]
-    lines = [",".join(headers)]
-    for c in data["cars"]:
-        notes = str(c.get("notes") or "").replace('"', "'")
-        row = [
-            c["plate"], c["make"], c["color"], c["status"], c["gate"],
-            c["zone"], str(c["slot"]), str(c["key_tag"]), c["guest_name"], c["guest_phone"],
-            f'"{_ist(c["check_in_time"])}"', f'"{_ist(c["parked_at"])}"', f'"{_ist(c["delivered_at"])}"',
-            _fmt_dur(c["duration_minutes"]), str(c["retrieval_minutes"] or ""),
-            c["check_in_driver"], c["parked_driver"], c["retrieval_driver"],
-            str(c["rating"] or ""), f'"{notes}"',
-            str(s["pre_registered"]), str(s["walk_in"]), s["peak_hour"] or "—", str(s["still_parked"]),
-        ]
-        lines.append(",".join(row))
-    return "\n".join(lines)
-
-
-async def _get_event_report_data(eid: str, user) -> dict:
+@api_router.get("/events/{eid}/report")
+async def get_event_report(eid: str, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))):
+    """Returns full event report data for PDF/CSV export."""
     event = await db.events.find_one({"id": eid}, {"_id": 0, "provider_id": 1})
     if not event:
         raise HTTPException(404, "Event not found")
@@ -5414,26 +5166,32 @@ async def _get_event_report_data(eid: str, user) -> dict:
             pass
 
         car_rows.append({
-            "plate": c.get("plate") or "",
-            "make": c.get("make") or "",
-            "color": c.get("color") or "",
-            "status": c.get("status") or "",
-            "gate": c.get("gate") or "",
-            "zone": c.get("zone") or "",
-            "slot": c.get("slot"),
-            "key_tag": c.get("key_tag") or "",
-            "guest_name": c.get("guest_name") or "",
-            "guest_phone": c.get("guest_phone") or "",
-            "check_in_time": c.get("check_in_time") or "",
-            "parked_at": c.get("parked_at") or "",
-            "delivered_at": c.get("delivered_at") or "",
+            "plate": c.get("plate", ""),
+            "make": c.get("make", ""),
+            "color": c.get("color", ""),
+            "status": c.get("status", ""),
+            "gate": c.get("gate", ""),
+            "zone": c.get("zone", ""),
+            "slot": c.get("slot", ""),
+            "key_tag": c.get("key_tag", ""),
+            "guest_name": c.get("guest_name", ""),
+            "guest_phone": c.get("guest_phone", ""),
+            "check_in_time": c.get("check_in_time", ""),
+            "parked_at": c.get("parked_at", ""),
+            "delivered_at": c.get("delivered_at", ""),
             "duration_minutes": duration_min,
             "retrieval_minutes": retrieval_min,
-            "check_in_driver": (drivers_map.get(c.get("check_in_driver_id")) or {}).get("name") or "",
-            "parked_driver": (drivers_map.get(c.get("parked_driver_id")) or {}).get("name") or "",
-            "retrieval_driver": (drivers_map.get(c.get("retrieval_driver_id")) or {}).get("name") or "",
+            "check_in_driver": drivers_map.get(
+                c.get("check_in_driver_id"), {}
+            ).get("name", ""),
+            "parked_driver": drivers_map.get(
+                c.get("parked_driver_id"), {}
+            ).get("name", ""),
+            "retrieval_driver": drivers_map.get(
+                c.get("retrieval_driver_id"), {}
+            ).get("name", ""),
             "rating": ratings_map.get(c["id"], {}).get("stars"),
-            "notes": c.get("notes") or "",
+            "notes": c.get("notes", ""),
         })
 
     driver_perf = {}
@@ -5525,103 +5283,6 @@ async def _get_event_report_data(eid: str, user) -> dict:
         "incidents": incidents,
     }
 
-async def _trigger_auto_report_email(event: dict):
-    recipients = []
-    
-    # 1. Superadmins
-    superadmins = await db.superadmins.find({}, {"_id": 0, "email": 1}).to_list(100)
-    for sa in superadmins:
-        if sa.get("email"):
-            recipients.append(sa["email"])
-            
-    # 2. Provider
-    prov = await db.providers.find_one({"id": event.get("provider_id")}, {"_id": 0, "email": 1})
-    if prov and prov.get("email"):
-        recipients.append(prov["email"])
-        
-    # 3. Host
-    if event.get("host_email"):
-        recipients.append(event["host_email"])
-        
-    await send_event_report_email(event["id"], recipients)
-
-
-
-async def send_event_report_email(eid: str, recipients: list[str]):
-    if not recipients:
-        return
-    cleaned_recipients = list(set([r.strip().lower() for r in recipients if r and isinstance(r, str)]))
-    valid_recipients = [r for r in cleaned_recipients if re.match(EMAIL_RE, r)]
-    if not valid_recipients:
-        return
-    
-    # Bypass auth check by passing a mock superadmin user
-    data = await _get_event_report_data(eid, {"role": "superadmin"})
-    html = _render_event_report_html(data)
-    csv_text = _render_event_report_csv(data)
-    
-    event_name = re.sub(r"\s+", "_", data["event"]["name"] or "event")
-    filename = f"{event_name}_report.csv"
-    
-    csv_bytes = csv_text.encode("utf-8")
-    b64_content = base64.b64encode(csv_bytes).decode("utf-8")
-    attachments = [{"filename": filename, "content": b64_content}]
-    subject = f"Event Report: {data['event'].get('name', 'Event')} - {data['event'].get('hotel_name', '')}"
-    
-    for r in valid_recipients:
-        try:
-            logger.info(f"Queuing event report email for {r} (event {eid})")
-            asyncio.create_task(send_email(r, subject, html, attachments))
-        except Exception as e:
-            logger.error(f"Failed to queue report email for {r}: {e}")
-
-class SendReportReq(BaseModel):
-    email: str
-
-@api_router.post("/events/{eid}/send-report")
-async def send_event_report_manual(
-    eid: str,
-    req: SendReportReq,
-    user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))
-):
-    if not re.match(EMAIL_RE, req.email):
-        raise HTTPException(400, "Invalid email format")
-    
-    event = await db.events.find_one({"id": eid}, {"_id": 0, "provider_id": 1})
-    if not event:
-        raise HTTPException(404, "Event not found")
-        
-    if user.get("role") != "superadmin" and event.get("provider_id") != user.get("provider_id"):
-        raise HTTPException(403, "Cannot send report for another provider's event")
-        
-    await send_event_report_email(eid, [req.email])
-    return {"ok": True}
-
-
-@api_router.get("/events/{eid}/report")
-async def get_event_report(eid: str, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))):
-    """Returns full event report data as JSON."""
-    return await _get_event_report_data(eid, user)
-
-@api_router.get("/events/{eid}/report.html")
-async def get_event_report_html(eid: str, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))):
-    """Returns the fully rendered event report as a standalone HTML page (used for PDF/print on every client)."""
-    data = await _get_event_report_data(eid, user)
-    html = _render_event_report_html(data)
-    return HTMLResponse(content=html)
-
-@api_router.get("/events/{eid}/report.csv")
-async def get_event_report_csv(eid: str, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))):
-    """Returns the event report as a downloadable CSV file."""
-    data = await _get_event_report_data(eid, user)
-    csv_text = _render_event_report_csv(data)
-    filename = re.sub(r"\s+", "_", data["event"]["name"] or "event") + "_report.csv"
-    return Response(
-        content=csv_text,
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-    )
-
 
 # Event drivers
 @api_router.get("/events/{eid}/drivers")
@@ -5633,7 +5294,7 @@ async def event_drivers(eid: str, user=Depends(require_roles("owner", "admin", "
         raise HTTPException(403, "Forbidden")
     pid = event["provider_id"]
     drivers = await db.drivers.find({"provider_id": pid, "role": "driver", "is_active": True}, SAFE_DRIVER_PROJ).to_list(1000)
-    other_events = await db.events.find({"provider_id": pid, "status": {"$in": ["upcoming", "active"]}, "id": {"$ne": eid}}, {"_id": 0}).to_list(1000)
+    other_events = await db.events.find({"provider_id": pid, "status": "active", "id": {"$ne": eid}}, {"_id": 0}).to_list(1000)
     assignments = {a["driver_id"]: a for a in await db.event_drivers.find({"event_id": {"$in": [e["id"] for e in other_events]}}, {"_id": 0}).to_list(2000)}
     e_start = f'{event["date"]}T{event.get("start_time","00:00")}'
     e_end = f'{event["end_date"]}T{event.get("end_time","23:59")}'
@@ -5706,7 +5367,7 @@ async def assign_driver(eid: str, did: str, user=Depends(require_roles("owner", 
         e_end = f'{event["end_date"]}T{event.get("end_time","23:59")}'
         
         for a in other_assignments:
-            other = await db.events.find_one({"id": a["event_id"], "status": {"$in": ["upcoming", "active"]}}, {"_id": 0})
+            other = await db.events.find_one({"id": a["event_id"], "status": "active"}, {"_id": 0})
             if other:
                 o_start = f'{other["date"]}T{other.get("start_time","00:00")}'
                 o_end = f'{other["end_date"]}T{other.get("end_time","23:59")}'
@@ -5755,7 +5416,7 @@ async def event_supervisors(eid: str, user=Depends(require_roles("owner", "admin
         raise HTTPException(403, "Forbidden")
         
     supervisors = await db.drivers.find({"provider_id": pid, "role": "supervisor", "is_active": True}, SAFE_DRIVER_PROJ).to_list(1000)
-    other_events = await db.events.find({"provider_id": pid, "status": {"$in": ["upcoming", "active"]}, "id": {"$ne": eid}}, {"_id": 0}).to_list(1000)
+    other_events = await db.events.find({"provider_id": pid, "status": "active", "id": {"$ne": eid}}, {"_id": 0}).to_list(1000)
     assignments = {a["supervisor_id"]: a for a in await db.event_supervisors.find({"supervisor_id": {"$in": [s["id"] for s in supervisors]}}, {"_id": 0}).to_list(2000)}
     
     e_start = f'{event["date"]}T{event.get("start_time","00:00")}'
@@ -5808,7 +5469,7 @@ async def assign_supervisor(eid: str, sid: str, user=Depends(require_roles("owne
         e_end = f'{event["end_date"]}T{event.get("end_time","23:59")}'
         
         for a in other_assignments:
-            other = await db.events.find_one({"id": a["event_id"], "status": {"$in": ["upcoming", "active"]}}, {"_id": 0})
+            other = await db.events.find_one({"id": a["event_id"], "status": "active"}, {"_id": 0})
             if other:
                 o_start = f'{other["date"]}T{other.get("start_time","00:00")}'
                 o_end = f'{other["end_date"]}T{other.get("end_time","23:59")}'
@@ -5876,7 +5537,7 @@ async def get_supervisor_stats(sid: str, user=Depends(require_roles("owner", "ad
     event_ids = [r["event_id"] for r in es_records]
     
     total_events = len(event_ids)
-    active_events = await db.events.count_documents({"id": {"$in": event_ids}, "status": {"$in": ["upcoming", "active"]}}) if event_ids else 0
+    active_events = await db.events.count_documents({"id": {"$in": event_ids}, "status": "active"}) if event_ids else 0
     total_cars_managed = await db.cars.count_documents({"event_id": {"$in": event_ids}}) if event_ids else 0
     
     car_ids = [c["id"] for c in await db.cars.find({"event_id": {"$in": event_ids}}, {"_id": 0, "id": 1}).to_list(100000)] if event_ids else []
@@ -5989,7 +5650,6 @@ async def get_driver_events(did: str, user=Depends(require_roles("superadmin", "
         e["cars_checked_in"] = await db.cars.count_documents({"event_id": eid, "check_in_driver_id": did})
         e["cars_retrieved"] = await db.cars.count_documents({"event_id": eid, "retrieval_driver_id": did, "status": "DELIVERED"})
         
-    events = [enrich_event_lifecycle(e) for e in events]
     return events
 
 @api_router.get("/drivers/{did}/report")
@@ -6205,7 +5865,6 @@ class CarCreate(BaseModel):
     expected_arrival: Optional[str] = None 
     pass_token: Optional[str] = None 
     car_type: Optional[str] = "normal"
-    has_plate_issue: Optional[bool] = False
 
     has_damage: Optional[bool] = False
     damage_notes: Optional[str] = None
@@ -6297,102 +5956,6 @@ async def superadmin_event_cars(eid: str, user=Depends(require_roles("owner", "a
         
     cars = await _attach_card_info(cars)
     return cars
-
-
-@api_router.patch("/superadmin/events/{eid}/cars/mark-all-delivered")
-async def superadmin_mark_all_cars_delivered(eid: str, user=Depends(require_roles("superadmin"))):
-    """
-    Emergency override: force every active (non-delivered, non-cancelled,
-    non-pre-registered) car in this event to DELIVERED in one shot.
-
-    Intended for the rare case where guests/drivers walked off with keys
-    directly (no time to run retrieval requests one by one) and the event
-    would otherwise stay stuck "active" with cars that are physically gone.
-    Frees each car's QR card and parking slot exactly like a normal delivery.
-    """
-    event = await db.events.find_one({"id": eid}, {"_id": 0, "id": 1})
-    if not event:
-        raise HTTPException(404, "Event not found")
-
-    eligible_cars = await db.cars.find(
-        {"event_id": eid, "deleted": {"$ne": True},
-         "status": {"$nin": ["DELIVERED", "CANCELLED", "PRE_REGISTERED"]}},
-        {"_id": 0}
-    ).to_list(10000)
-
-    if not eligible_cars:
-        return {"updated_count": 0}
-
-    now = now_iso()
-    ids = [c["id"] for c in eligible_cars]
-    marked_by = {"role": user.get("role"), "id": user.get("user_id"), "name": user.get("name")}
-
-    await db.cars.update_many(
-        {"id": {"$in": ids}},
-        {"$set": {
-            "status": "DELIVERED",
-            "delivered_at": now,
-            "updated_at": now,
-            "delivery_type": "bulk_admin_override",
-            "bulk_delivered_by": marked_by,
-            "otp_verified": False,
-            "no_show_count": 0,
-        }}
-    )
-
-    await db.retrieval_requests.update_many(
-        {"car_id": {"$in": ids}},
-        {"$set": {"status": "COMPLETED", "updated_at": now}}
-    )
-
-    card_ids = [c["qr_card_id"] for c in eligible_cars if c.get("qr_card_id")]
-    if card_ids:
-        await db.car_qr_cards.update_many(
-            {"id": {"$in": card_ids}},
-            {"$set": {"status": "empty", "car_id": None}}
-        )
-
-    async def _release_card_broadcast(card_id):
-        try:
-            released_card = await db.car_qr_cards.find_one({"id": card_id}, {"_id": 0, "provider_id": 1})
-            if released_card:
-                await manager.broadcast(f"provider:{released_card['provider_id']}", {
-                    "type": "qr_card_update",
-                    "data": {"id": card_id, "status": "empty", "car_id": None, "plate": None}
-                })
-        except Exception as e:
-            logger.warning(f"qr_card_update broadcast failed on bulk delivery (card_id={card_id}): {e}")
-
-    async def _free_slot(c):
-        if c.get("zone") and c.get("slot") is not None:
-            await db.parking_slots.update_one(
-                {"event_id": eid, "zone_name": c["zone"], "slot_number": c["slot"]},
-                {"$set": {"is_occupied": False, "car_id": None}}
-            )
-
-    driver_ids = {c["retrieval_driver_id"] for c in eligible_cars if c.get("retrieval_driver_id")}
-
-    await asyncio.gather(
-        *[_release_card_broadcast(cid) for cid in card_ids],
-        *[_free_slot(c) for c in eligible_cars],
-    )
-
-    for did in driver_ids:
-        asyncio.create_task(refresh_driver_duty_status(did))
-
-    updated_cars = []
-    for c in eligible_cars:
-        c.update({
-            "status": "DELIVERED", "delivered_at": now, "updated_at": now,
-            "delivery_type": "bulk_admin_override", "bulk_delivered_by": marked_by,
-            "otp_verified": False, "no_show_count": 0,
-        })
-        updated_cars.append(c)
-
-    await asyncio.gather(*[broadcast_car_update(c) for c in updated_cars])
-
-    return {"updated_count": len(updated_cars)}
-
 
 # How long a scanned/entered card stays claimed by the person who scanned it,
 # before anyone else is allowed to pick it up. Long enough to fill out the
@@ -6562,8 +6125,6 @@ async def release_qr_card_reservation(card_id: str, user=Depends(require_roles("
 async def create_car(request: Request, body: CarCreate, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor", "driver"))):
     _t_start = time.perf_counter()
     plate = body.plate.upper()
-    if not body.has_plate_issue:
-        validate_plate_format(plate)
     
     if user.get("role") == "driver":
         body.check_in_driver_id = user.get("user_id")
@@ -6580,10 +6141,6 @@ async def create_car(request: Request, body: CarCreate, user=Depends(require_rol
         db.cars.count_documents({"event_id": body.event_id, "status": {"$nin": ["DELIVERED"]}}),
         db.cars.find_one({"event_id": body.event_id, "plate": plate}, {"_id": 0, "id": 1, "status": 1, "check_in_driver_id": 1, "check_in_time": 1}), 
     )
-    if not plate:
-        # A blank plate is only reachable via has_plate_issue=True. Multiple such cars can exist
-        # in the same event, so never treat one blank-plate car as a "duplicate" of another.
-        duplicate = None
     if not event:
         raise HTTPException(404, "Event not found")
     if event.get("status") != "active":
@@ -6591,7 +6148,7 @@ async def create_car(request: Request, body: CarCreate, user=Depends(require_rol
     
     from zoneinfo import ZoneInfo
     now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-    if not event.get("manually_activated") and now_ist < event_checkin_opens_at(event) - timedelta(minutes=30):
+    if now_ist < event_checkin_opens_at(event) - timedelta(minutes=30):
         raise HTTPException(400, "Check-in opens 30 minutes before the event start time")
     if current >= event["max_cars"]:
         logger.warning(f"Event {body.event_id} is full but allowing check-in")
@@ -6613,32 +6170,6 @@ async def create_car(request: Request, body: CarCreate, user=Depends(require_rol
                 existing_full = await db.cars.find_one({"id": duplicate["id"]}, {"_id": 0})
                 return clean(existing_full)
             raise HTTPException(400, f"Vehicle {body.plate} is already active in this event (status: {duplicate['status']})")
-
-    # Plate-issue abuse guard: max 3 consecutive flagged check-ins per driver per event,
-    # then a 15-minute lock on this option. Any normal (valid-plate) check-in resets the streak.
-    plate_issue_assignment = None
-    if body.check_in_driver_id:
-        plate_issue_assignment = await db.event_drivers.find_one({"event_id": body.event_id, "driver_id": body.check_in_driver_id})
-
-    if body.has_plate_issue:
-        blocked_until = plate_issue_assignment.get("plate_issue_blocked_until") if plate_issue_assignment else None
-        if blocked_until and blocked_until > now_iso():
-            remaining_min = max(1, int((datetime.fromisoformat(blocked_until) - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
-            raise HTTPException(400, f"You're temporarily blocked from checking in vehicles without a valid number plate. Try again in {remaining_min} minute(s).")
-
-        streak = (plate_issue_assignment.get("plate_issue_streak") or 0) if plate_issue_assignment else 0
-        if streak >= 3:
-            blocked_until_ts = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-            await db.event_drivers.update_one(
-                {"event_id": body.event_id, "driver_id": body.check_in_driver_id},
-                {"$set": {"plate_issue_streak": 0, "plate_issue_blocked_until": blocked_until_ts}}
-            )
-            raise HTTPException(400, "You've checked in 3 vehicles without a valid number plate in a row. This option is locked for 15 minutes to prevent misuse.")
-    elif plate_issue_assignment and plate_issue_assignment.get("plate_issue_streak"):
-        await db.event_drivers.update_one(
-            {"event_id": body.event_id, "driver_id": body.check_in_driver_id},
-            {"$set": {"plate_issue_streak": 0}}
-        )
 
     cid = str(uuid.uuid4())
     
@@ -6704,7 +6235,6 @@ async def create_car(request: Request, body: CarCreate, user=Depends(require_rol
         "guest_phone": body.guest_phone or None,
         "is_instant_park": use_instant_park,
         "car_type": body.car_type or "normal",
-        "has_plate_issue": bool(body.has_plate_issue),
 
         "has_damage": bool(body.has_damage),
         "damage_notes": body.damage_notes or None,
@@ -6714,7 +6244,7 @@ async def create_car(request: Request, body: CarCreate, user=Depends(require_rol
         "registered_by": {"id": user.get("user_id"), "name": user.get("name"), "role": user.get("role")},
         "created_at": now_iso(), "updated_at": now_iso(),
     }
-    lock_id = f"checkin:{body.event_id}:{plate}" if plate else f"checkin:{body.event_id}:{uuid.uuid4()}"
+    lock_id = f"checkin:{body.event_id}:{plate}"
     try:
         now = datetime.now(timezone.utc)
         await db.locks.update_one(
@@ -6789,13 +6319,6 @@ async def create_car(request: Request, body: CarCreate, user=Depends(require_rol
         async def _mark_driver_busy(driver_id=body.check_in_driver_id):
             await db.drivers.update_one({"id": driver_id}, {"$set": {"duty_status": "busy", "duty_status_updated_at": now_iso()}})
         asyncio.create_task(_mark_driver_busy())
-        if body.has_plate_issue:
-            async def _bump_plate_issue_streak(event_id=body.event_id, driver_id=body.check_in_driver_id):
-                await db.event_drivers.update_one(
-                    {"event_id": event_id, "driver_id": driver_id},
-                    {"$inc": {"plate_issue_streak": 1}}
-                )
-            asyncio.create_task(_bump_plate_issue_streak())
 
     if user.get("role") != "driver" and body.check_in_driver_id:
         async def _push_checkin_assigned(driver_id=body.check_in_driver_id, plate=doc["plate"], gate=doc.get("gate")):
@@ -7774,7 +7297,12 @@ async def create_hotel_preregistration(hotel_qr_token: str, body: dict = Body(..
     expected_arrival = body.get("expected_arrival", "") 
     guest_notes = (body.get("guest_notes") or "").strip()
     
-    validate_plate_format(plate)
+    # Validate plate format
+    _std = re.compile(r'^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{1,4}$')
+    _bh = re.compile(r'^[0-9]{2}BH[0-9]{4}[A-Z]{1,2}$')
+    plate_clean = plate.replace("-", "").replace(" ", "")
+    if not (_std.match(plate_clean) or _bh.match(plate_clean)):
+        raise HTTPException(400, "Invalid number plate format. Use standard (GJ01AB1234) or BH series (22BH1234AA).")
     
     if not all([event_id, guest_name, guest_phone, plate, make, color]): 
         raise HTTPException(400, "All fields are required") 
@@ -7906,7 +7434,12 @@ async def create_event_preregistration(event_qr_token: str, body: dict = Body(..
             pass
     guest_notes = (body.get("guest_notes") or "").strip()
     
-    validate_plate_format(plate)
+    # Validate plate format
+    _std = re.compile(r'^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{1,4}$')
+    _bh = re.compile(r'^[0-9]{2}BH[0-9]{4}[A-Z]{1,2}$')
+    plate_clean = plate.replace("-", "").replace(" ", "")
+    if not (_std.match(plate_clean) or _bh.match(plate_clean)):
+        raise HTTPException(400, "Invalid number plate format. Use standard (GJ01AB1234) or BH series (22BH1234AA).")
     
     if not all([guest_name, guest_phone, plate, make, color]): 
         raise HTTPException(400, "All fields are required") 
@@ -8009,7 +7542,12 @@ async def create_preregistration(provider_qr_token: str, body: dict = Body(...))
     expected_arrival = body.get("expected_arrival", "") 
     guest_notes = (body.get("guest_notes") or "").strip()
     
-    validate_plate_format(plate)
+    # Validate plate format
+    _std = re.compile(r'^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{1,4}$')
+    _bh = re.compile(r'^[0-9]{2}BH[0-9]{4}[A-Z]{1,2}$')
+    plate_clean = plate.replace("-", "").replace(" ", "")
+    if not (_std.match(plate_clean) or _bh.match(plate_clean)):
+        raise HTTPException(400, "Invalid number plate format. Use standard (GJ01AB1234) or BH series (22BH1234AA).")
     
     # Validate required fields 
     if not all([event_id, guest_name, guest_phone, plate, make, color]): 
@@ -8165,10 +7703,7 @@ async def complete_checkin(cid: str, body: dict = Body(...), user=Depends(requir
     if body.get("make"): update["make"] = body["make"].strip() 
     if body.get("color"): update["color"] = body["color"].strip() 
     if body.get("notes"): update["notes"] = body["notes"].strip()
-    if body.get("plate"):
-        new_plate = body["plate"].strip().upper()
-        validate_plate_format(new_plate)
-        update["plate"] = new_plate 
+    if body.get("plate"): update["plate"] = body["plate"].strip().upper() 
     if body.get("car_type"): update["car_type"] = body["car_type"]
 
     if "has_damage" in body: update["has_damage"] = bool(body.get("has_damage"))
@@ -8868,11 +8403,6 @@ async def get_by_qr(token: str):
     if card:
         if not card.get("car_id"):
             raise HTTPException(404, "Invalid QR token")
-        linked_car = await db.cars.find_one({"id": card["car_id"]}, {"_id": 0})
-        if linked_car and linked_car.get("has_plate_issue"):
-            # No reliable plate to verify against — the physical card-in-hand check at
-            # handover is the security control for these cars, so skip the plate-last-4 step.
-            return await _build_guest_view(linked_car)
         return {"requires_verification": True, "card_qr_token": token}
     else:
         raise HTTPException(404, "Invalid QR token")
@@ -8895,26 +8425,10 @@ async def verify_retrieval(request: Request, token: str, body: PlateVerifyBody):
     if locked_until and locked_until > now_iso():
         raise HTTPException(429, "Too many attempts. Please see the valet attendant.")
 
-    def _normalize_plate(s: str) -> str:
-        return "".join(ch for ch in (s or "") if ch.isalnum()).upper()
+    entered = "".join(ch for ch in body.plate_last4 if ch.isalnum()).upper()
+    actual_last4 = (car.get("plate") or "")[-4:].upper()
 
-    entered = _normalize_plate(body.plate_last4)
-    actual_norm = _normalize_plate(car.get("plate"))
-    actual_last4 = actual_norm[-4:] if actual_norm else ""
-
-    def _plates_match(entered: str, expected: str) -> bool:
-        if not expected:
-            return False
-        if entered == expected:
-            return True
-        # Special/short plates (e.g. "1", "555", "888") get zero-padded by
-        # guests who assume 4 digits are required — tolerate that as long
-        # as both sides are purely numeric.
-        if entered.isdigit() and expected.isdigit():
-            return entered.lstrip("0") == expected.lstrip("0")
-        return False
-
-    if not _plates_match(entered, actual_last4):
+    if entered != actual_last4:
         attempts = car.get("plate_verify_attempts", 0) + 1
         update = {"plate_verify_attempts": attempts}
         if attempts >= 5:
@@ -9074,7 +8588,7 @@ async def super_stats(user=Depends(require_roles("superadmin"))):
     ) = await asyncio.gather(
         db.providers.count_documents({"role": "owner"}),
         db.providers.count_documents({"role": "owner", "is_active": True}),
-        db.events.count_documents({"status": {"$in": ["upcoming", "active"]}}),
+        db.events.count_documents({"status": "active"}),
         db.drivers.count_documents({"role": "driver"}),
         db.cars.count_documents({"deleted": {"$ne": True}}),
         db.cars.count_documents({"status": "PARKED"}),
@@ -9158,15 +8672,10 @@ async def superadmin_cars_list(
     pipeline.extend([
         {"$sort": {"check_in_time": -1}},
         {"$group": {
-            # Cars with a plate issue (no plate / TC number) group by their own unique car id,
-            # so each is always its own row — never merged with another car just because both
-            # have a blank plate or the same free-text TC number.
-            "_id": {"$cond": [{"$eq": ["$has_plate_issue", True]}, "$id", "$plate"]},
-            "car_id": {"$first": "$id"},
+            "_id": "$plate",
             "plate": {"$first": "$plate"},
             "make": {"$first": "$make"},
             "color": {"$first": "$color"},
-            "has_plate_issue": {"$first": "$has_plate_issue"},
             "total_visits": {"$sum": 1},
             "last_seen": {"$first": "$check_in_time"},
             "last_event_id": {"$first": "$event_id"},
@@ -9174,11 +8683,9 @@ async def superadmin_cars_list(
         }},
         {"$project": {
             "_id": 0,
-            "car_id": 1,
             "plate": 1,
             "make": 1,
             "color": 1,
-            "has_plate_issue": 1,
             "total_visits": 1,
             "last_seen": 1,
             "last_event_id": 1,
@@ -9202,125 +8709,133 @@ async def superadmin_cars_list(
 
     return result
 
-async def _build_superadmin_car_history(records: list):
-    """Shared builder for both plate-based and id-based superadmin car history. `records` is
-    already-fetched, already-sorted (check_in_time ASCENDING) list of one or more car docs
-    representing the same grouped identity."""
-    event_ids = list({r["event_id"] for r in records})
-    events = await db.events.find({"id": {"$in": event_ids}}, {"_id": 0}).to_list(len(event_ids))
-    events_map = {e["id"]: e for e in events}
+@api_router.get("/superadmin/cars/{plate}/history") 
+async def superadmin_car_history(plate: str, user=Depends(require_roles("superadmin"))): 
+    plate = plate.upper() 
+    # All records for this plate 
+    records = await db.cars.find({"plate": plate}, {"_id": 0}).sort("check_in_time", ASCENDING).to_list(1000) 
+    if not records: 
+        raise HTTPException(404, "No records found for this plate") 
+    
+    # Batch fetch events 
+    event_ids = list({r["event_id"] for r in records}) 
+    events = await db.events.find({"id": {"$in": event_ids}}, {"_id": 0}).to_list(len(event_ids)) 
+    events_map = {e["id"]: e for e in events} 
+    
+    # Batch fetch provider names 
+    provider_ids = list({e.get("provider_id") for e in events if e.get("provider_id")}) 
+    providers = await db.providers.find({"id": {"$in": provider_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(provider_ids)) 
+    providers_map = {p["id"]: p["name"] for p in providers} 
+    
+    # Batch fetch all driver ids 
+    driver_ids = set() 
+    for r in records: 
+        for f in ["check_in_driver_id", "parked_driver_id", "retrieval_driver_id"]: 
+            if r.get(f): 
+                driver_ids.add(r[f]) 
+    drivers = await db.drivers.find({"id": {"$in": list(driver_ids)}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(driver_ids)) 
+    drivers_map = {d["id"]: d["name"] for d in drivers} 
+    
+    # Batch fetch all photos for these car ids 
+    car_ids = [r["id"] for r in records] 
+    photos = await db.car_photos.find({"car_id": {"$in": car_ids}}, {"_id": 0}).to_list(5000) 
+    photos_by_car = {} 
+    for p in photos: 
+        photos_by_car.setdefault(p["car_id"], []).append(p) 
+    
+    # Batch fetch ratings 
+    ratings = await db.ratings.find({"car_id": {"$in": car_ids}}, {"_id": 0}).to_list(1000) 
+    ratings_map = {r["car_id"]: r for r in ratings} 
 
-    provider_ids = list({e.get("provider_id") for e in events if e.get("provider_id")})
-    providers = await db.providers.find({"id": {"$in": provider_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(provider_ids))
-    providers_map = {p["id"]: p["name"] for p in providers}
-
-    driver_ids = set()
-    for r in records:
-        for f in ["check_in_driver_id", "parked_driver_id", "retrieval_driver_id"]:
-            if r.get(f):
-                driver_ids.add(r[f])
-    drivers = await db.drivers.find({"id": {"$in": list(driver_ids)}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(driver_ids))
-    drivers_map = {d["id"]: d["name"] for d in drivers}
-
-    car_ids = [r["id"] for r in records]
-    photos = await db.car_photos.find({"car_id": {"$in": car_ids}}, {"_id": 0}).to_list(5000)
-    photos_by_car = {}
-    for p in photos:
-        photos_by_car.setdefault(p["car_id"], []).append(p)
-
-    ratings = await db.ratings.find({"car_id": {"$in": car_ids}}, {"_id": 0}).to_list(1000)
-    ratings_map = {r["car_id"]: r for r in ratings}
-
+    # Batch fetch assignment audit trail (who assigned which driver, self vs supervisor/admin, reassignments)
     assignments = await db.assignments.find({"car_id": {"$in": car_ids}}, {"_id": 0}).sort("created_at", ASCENDING).to_list(5000)
     assignments_by_car = {}
     for a in assignments:
         assignments_by_car.setdefault(a["car_id"], []).append(a)
-
-    visits = []
-    for r in records:
-        event = events_map.get(r["event_id"], {})
-        provider_id = event.get("provider_id")
-
-        duration_minutes = None
-        try:
-            if r.get("check_in_time") and r.get("delivered_at"):
-                t1 = datetime.fromisoformat(r["check_in_time"])
-                t2 = datetime.fromisoformat(r["delivered_at"])
-                duration_minutes = round((t2 - t1).total_seconds() / 60, 1)
-        except Exception:
-            pass
-
-        visit = {
-            "car_id": r["id"],
-            "event_id": r["event_id"],
-            "event_name": event.get("name", "—"),
-            "event_date": event.get("date", "—"),
-            "provider_name": providers_map.get(provider_id, "—"),
-            "status": r.get("status"),
-            "gate": r.get("gate", "—"),
-            "zone": r.get("zone"),
-            "slot": r.get("slot"),
-            "check_in_time": r.get("check_in_time"),
-            "parked_at": r.get("parked_at"),
-            "delivered_at": r.get("delivered_at"),
-            "retrieval_requested_at": r.get("retrieval_requested_at"),
-            "being_fetched_at": r.get("being_fetched_at"),
-            "duration_minutes": duration_minutes,
-            "check_in_driver": drivers_map.get(r.get("check_in_driver_id"), "—"),
-            "parked_by": drivers_map.get(r.get("parked_driver_id"), "—"),
-            "retrieved_by": drivers_map.get(r.get("retrieval_driver_id"), "—"),
-            "notes": r.get("notes", ""),
+    
+    # Build enriched visit records 
+    visits = [] 
+    for r in records: 
+        event = events_map.get(r["event_id"], {}) 
+        provider_id = event.get("provider_id") 
+        
+        # Calculate duration in minutes 
+        duration_minutes = None 
+        try: 
+            if r.get("check_in_time") and r.get("delivered_at"): 
+                t1 = datetime.fromisoformat(r["check_in_time"]) 
+                t2 = datetime.fromisoformat(r["delivered_at"]) 
+                duration_minutes = round((t2 - t1).total_seconds() / 60, 1) 
+        except Exception: 
+            pass 
+        
+        visit = { 
+            "car_id": r["id"], 
+            "event_id": r["event_id"], 
+            "event_name": event.get("name", "—"), 
+            "event_date": event.get("date", "—"), 
+            "provider_name": providers_map.get(provider_id, "—"), 
+            "status": r.get("status"), 
+            "gate": r.get("gate", "—"), 
+            "zone": r.get("zone"), 
+            "slot": r.get("slot"), 
+            "check_in_time": r.get("check_in_time"), 
+            "parked_at": r.get("parked_at"), 
+            "delivered_at": r.get("delivered_at"), 
+            "retrieval_requested_at": r.get("retrieval_requested_at"), 
+            "being_fetched_at": r.get("being_fetched_at"), 
+            "duration_minutes": duration_minutes, 
+            "check_in_driver": drivers_map.get(r.get("check_in_driver_id"), "—"), 
+            "parked_by": drivers_map.get(r.get("parked_driver_id"), "—"), 
+            "retrieved_by": drivers_map.get(r.get("retrieval_driver_id"), "—"), 
+            "notes": r.get("notes", ""), 
             "guest_name": r.get("guest_name"),
             "guest_phone": r.get("guest_phone"),
+
             "key_tag": r.get("key_tag"),
             "car_type": r.get("car_type", "normal"),
-            "has_plate_issue": r.get("has_plate_issue", False),
             "has_damage": r.get("has_damage", False),
             "damage_notes": r.get("damage_notes"),
             "damage_types": r.get("damage_types", []),
             "rating": ratings_map.get(r["id"], {}).get("stars") if ratings_map.get(r["id"]) else None,
             "rating_comment": ratings_map.get(r["id"], {}).get("comment") if ratings_map.get(r["id"]) else None,
-            "photos": photos_by_car.get(r["id"], []),
+            "photos": photos_by_car.get(r["id"], []), 
             "delivery_photo_url": r.get("delivery_photo_url"),
             "assignments": assignments_by_car.get(r["id"], []),
         }
         visit.update(compute_car_step_durations(r))
         visits.append(visit)
-
-    delivered_visits = [v for v in visits if v["status"] == "DELIVERED"]
-    durations = [v["duration_minutes"] for v in delivered_visits if v["duration_minutes"] is not None]
-
-    return {
-        "plate": records[-1].get("plate", ""),
-        "has_plate_issue": records[-1].get("has_plate_issue", False),
-        "make": records[-1].get("make", ""),
-        "color": records[-1].get("color", ""),
-        "total_visits": len(visits),
-        "first_seen": records[0].get("check_in_time"),
-        "last_seen": records[-1].get("check_in_time"),
-        "avg_duration_minutes": round(sum(durations) / len(durations), 1) if durations else None,
-        "visits": visits,
+    
+    # Summary stats 
+    delivered_visits = [v for v in visits if v["status"] == "DELIVERED"] 
+    durations = [v["duration_minutes"] for v in delivered_visits if v["duration_minutes"] is not None] 
+    
+    return { 
+        "plate": plate, 
+        "make": records[-1].get("make", ""), 
+        "color": records[-1].get("color", ""), 
+        "total_visits": len(visits), 
+        "first_seen": records[0].get("check_in_time"), 
+        "last_seen": records[-1].get("check_in_time"), 
+        "avg_duration_minutes": round(sum(durations) / len(durations), 1) if durations else None, 
+        "visits": visits, 
     }
 
-@api_router.get("/superadmin/cars/{plate}/history")
-async def superadmin_car_history(plate: str, user=Depends(require_roles("superadmin"))):
+@api_router.get("/provider/cars/{plate}/history")
+async def owner_car_history(plate: str, user=Depends(require_roles("owner", "admin"))):
     plate = plate.upper()
     records = await db.cars.find({"plate": plate}, {"_id": 0}).sort("check_in_time", ASCENDING).to_list(1000)
     if not records:
         raise HTTPException(404, "No records found for this plate")
-    return await _build_superadmin_car_history(records)
 
-@api_router.get("/superadmin/cars/id/{car_id}/history")
-async def superadmin_car_history_by_id(car_id: str, user=Depends(require_roles("superadmin"))):
-    record = await db.cars.find_one({"id": car_id}, {"_id": 0})
-    if not record:
-        raise HTTPException(404, "No record found for this car")
-    return await _build_superadmin_car_history([record])
-
-async def _build_owner_car_history(records: list):
     event_ids = list({r["event_id"] for r in records})
     events = await db.events.find({"id": {"$in": event_ids}}, {"_id": 0}).to_list(len(event_ids))
     events_map = {e["id"]: e for e in events}
+
+    # Scope to this provider only — drop any visit records from other providers
+    records = [r for r in records if events_map.get(r["event_id"], {}).get("provider_id") == user["provider_id"]]
+    if not records:
+        raise HTTPException(404, "No records found for this plate")
 
     # Batch fetch all driver ids 
     driver_ids = set() 
@@ -9384,9 +8899,9 @@ async def _build_owner_car_history(records: list):
             "notes": r.get("notes", ""), 
             "guest_name": r.get("guest_name"),
             "guest_phone": r.get("guest_phone"),
+
             "key_tag": r.get("key_tag"),
             "car_type": r.get("car_type", "normal"),
-            "has_plate_issue": r.get("has_plate_issue", False),
             "has_damage": r.get("has_damage", False),
             "damage_notes": r.get("damage_notes"),
             "damage_types": r.get("damage_types", []),
@@ -9404,8 +8919,7 @@ async def _build_owner_car_history(records: list):
     durations = [v["duration_minutes"] for v in delivered_visits if v["duration_minutes"] is not None] 
     
     return { 
-        "plate": records[-1].get("plate", ""),
-        "has_plate_issue": records[-1].get("has_plate_issue", False),
+        "plate": plate, 
         "make": records[-1].get("make", ""), 
         "color": records[-1].get("color", ""), 
         "total_visits": len(visits), 
@@ -9415,35 +8929,20 @@ async def _build_owner_car_history(records: list):
         "visits": visits, 
     }
 
-@api_router.get("/provider/cars/{plate}/history")
-async def owner_car_history(plate: str, user=Depends(require_roles("owner", "admin"))):
-    plate = plate.upper()
-    records = await db.cars.find({"plate": plate}, {"_id": 0}).sort("check_in_time", ASCENDING).to_list(1000)
-    if not records:
-        raise HTTPException(404, "No records found for this plate")
+@api_router.get("/superadmin/cars/{plate}/report")
+async def superadmin_car_report(
+    plate: str,
+    user=Depends(require_roles("superadmin"))
+):
+    """Full vehicle report across all visits for PDF export."""
+    cars = await db.cars.find(
+        {"plate": plate.upper()},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(1000)
 
-    event_ids = list({r["event_id"] for r in records})
-    events = await db.events.find({"id": {"$in": event_ids}}, {"_id": 0}).to_list(len(event_ids))
-    events_map = {e["id"]: e for e in events}
+    if not cars:
+        raise HTTPException(404, "No records for this plate")
 
-    # Scope to this provider only — drop any visit records from other providers
-    records = [r for r in records if events_map.get(r["event_id"], {}).get("provider_id") == user["provider_id"]]
-    if not records:
-        raise HTTPException(404, "No records found for this plate")
-
-    return await _build_owner_car_history(records)
-
-@api_router.get("/provider/cars/id/{car_id}/history")
-async def owner_car_history_by_id(car_id: str, user=Depends(require_roles("owner", "admin"))):
-    record = await db.cars.find_one({"id": car_id}, {"_id": 0})
-    if not record:
-        raise HTTPException(404, "No record found for this car")
-    event = await db.events.find_one({"id": record["event_id"]}, {"_id": 0, "provider_id": 1})
-    if not event or event.get("provider_id") != user["provider_id"]:
-        raise HTTPException(404, "No record found for this car")
-    return await _build_owner_car_history([record])
-
-async def _build_superadmin_car_report(cars: list):
     # Get all driver IDs
     driver_ids = list(set(filter(None, [
         c.get("check_in_driver_id") for c in cars
@@ -9553,11 +9052,10 @@ async def _build_superadmin_car_report(cars: list):
                 c.get("retrieval_driver_id"), ""
             ),
             "rating_platform": rating["stars"] if rating else None,
-            "rating_comment": rating.get("comment") if rating else None,
+        "rating_comment": rating.get("comment")
+                if rating else None,
             "photos": photos_by_car.get(c["id"], []),
             "incidents": incidents_by_car.get(c["id"], []),
-            "has_plate_issue": c.get("has_plate_issue", False),
-            "car_type": c.get("car_type", "normal"),
         })
 
     # First car's basic info
@@ -9572,7 +9070,7 @@ async def _build_superadmin_car_report(cars: list):
     ) if total_delivered else 0
 
     return {
-        "plate": first.get("plate", ""),
+        "plate": plate.upper(),
         "make": first.get("make", ""),
         "color": first.get("color", ""),
         "guest_name": first.get("guest_name", ""),
@@ -9585,30 +9083,6 @@ async def _build_superadmin_car_report(cars: list):
         ),
         "visits": visits,
     }
-
-@api_router.get("/superadmin/cars/{plate}/report")
-async def superadmin_car_report(
-    plate: str,
-    user=Depends(require_roles("superadmin"))
-):
-    """Full vehicle report across all visits for PDF export."""
-    cars = await db.cars.find(
-        {"plate": plate.upper()},
-        {"_id": 0}
-    ).sort("created_at", 1).to_list(1000)
-
-    if not cars:
-        raise HTTPException(404, "No records for this plate")
-
-    return await _build_superadmin_car_report(cars)
-
-@api_router.get("/superadmin/cars/id/{car_id}/report")
-async def superadmin_car_report_by_id(car_id: str, user=Depends(require_roles("superadmin"))):
-    """Single-vehicle report for a plate-issue car (no meaningful multi-visit grouping)."""
-    car = await db.cars.find_one({"id": car_id}, {"_id": 0})
-    if not car:
-        raise HTTPException(404, "No record for this car")
-    return await _build_superadmin_car_report([car])
 
 # ============== SUPERADMIN PLANS ==============
 
@@ -9809,39 +9283,11 @@ async def ws_sos_api(ws: WebSocket, event_id: str, token: str = Query(None)):
     await _ws_loop(f"sos:{event_id}", ws, token=token, require_auth=True)
 
 # ============== STARTUP ==============
-async def auto_activate_loop():
-    while True:
-        try:
-            from zoneinfo import ZoneInfo
-            now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-            upcoming_events = await db.events.find({"status": "upcoming"}, {"_id": 0}).to_list(1000)
-            for e in upcoming_events:
-                status = compute_event_status(e, now_ist)
-                if status == "active":
-                    res = await db.events.update_one(
-                        {"id": e["id"], "status": "upcoming"},
-                        {"$set": {
-                            "status": "active",
-                            "activated_at": now_iso(),
-                            "activation_type": "auto",
-                            "updated_at": now_iso()
-                        }}
-                    )
-                    if res.modified_count > 0:
-                        logger.info(f"Auto-activated event {e['id']}")
-                        if "provider_id" in e:
-                            await manager.broadcast(f"provider:{e['provider_id']}", {"type": "event_activated", "event_id": e["id"]})
-                        await manager.broadcast(f"event:{e['id']}", {"type": "event_activated", "event_id": e["id"]})
-        except Exception as err:
-            logger.error(f"auto_activate_loop error: {err}")
-        
-        await asyncio.sleep(60)
-
 async def auto_close_loop():
     while True:
         try:
             now = datetime.now(timezone.utc)
-            events = await db.events.find({"status": {"$in": ["upcoming", "active"]}, "event_type": {"$ne": "hotel_daily"}}, {"_id": 0}).to_list(2000)
+            events = await db.events.find({"status": "active", "event_type": {"$ne": "hotel_daily"}}, {"_id": 0}).to_list(2000)
             for e in events:
                 try:
                     from zoneinfo import ZoneInfo
@@ -9873,9 +9319,6 @@ async def auto_close_loop():
     
                             await db.parking_slots.delete_many({"event_id": e["id"]})
                             logger.info(f"Auto-closed event {e['id']}")
-                            
-                            # Trigger auto report email
-                            asyncio.create_task(_trigger_auto_report_email(e))
                         else:
                             if not e.get("auto_close_reminder_sent_at"):
                                 await db.events.update_one({"id": e["id"]}, {"$set": {"auto_close_reminder_sent_at": now_iso()}})
@@ -10263,29 +9706,6 @@ async def create_daily_hotel_events():
 scheduler = AsyncIOScheduler(timezone="Asia/Kolkata") 
 scheduler.add_job(create_daily_hotel_events, "cron", hour=0, minute=0) 
 
-@api_router.post("/superadmin/migrate-event-status")
-async def migrate_event_status(user=Depends(require_roles("superadmin"))):
-    from zoneinfo import ZoneInfo
-    now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
-    events = await db.events.find({
-        "status": "active",
-        "manually_activated": {"$ne": True},
-        "event_type": {"$ne": "hotel_daily"}
-    }, {"_id": 0}).to_list(10000)
-    
-    migrated_count = 0
-    for e in events:
-        new_status = compute_event_status(e, now_ist)
-        if new_status == "upcoming":
-            await db.events.update_one(
-                {"id": e["id"]},
-                {"$set": {"status": "upcoming", "updated_at": now_iso()}}
-            )
-            migrated_count += 1
-            
-    return {"ok": True, "migrated": migrated_count, "total_checked": len(events)}
-
-
 @api_router.post("/superadmin/hotels/{hotel_id}/trigger-daily-event")
 async def trigger_daily_event_for_hotel(hotel_id: str, user=Depends(require_roles("superadmin"))):
     hotel = await db.hotels.find_one({"id": hotel_id}, {"_id": 0})
@@ -10402,7 +9822,6 @@ async def on_start():
             logger.info(f"Superadmin seeded: {sa_email}")
     else:
         logger.warning("SUPERADMIN_EMAIL or SUPERADMIN_PASSWORD env vars not set — skipping seed")
-    asyncio.create_task(auto_activate_loop())
     asyncio.create_task(auto_close_loop())
     asyncio.create_task(scheduled_retrieval_loop())
     asyncio.create_task(gate_timeout_loop())
@@ -10589,7 +10008,6 @@ async def _build_event_queue(event_id: str) -> list:
         result.append({
             "car_id": c.get("id"),
             "car_number": c.get("plate"),
-            "has_plate_issue": c.get("has_plate_issue", False),
             "guest_name": c.get("guest_name"),
             "status": status,
             "check_in_driver_name": driver_map.get(c.get("check_in_driver_id"), ""),
@@ -10723,7 +10141,7 @@ async def get_hotel_guest_list(hid: str, user=Depends(require_roles("owner", "ad
     return await db.guest_list.find({"context_type": "hotel", "context_id": hid}, {"_id": 0}).to_list(10000)
 
 @api_router.patch("/events/{eid}/host")
-async def set_event_host(eid: str, body: dict, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))):
+async def set_event_host(eid: str, body: dict, user=Depends(require_roles("owner", "admin", "superadmin"))):
     host_name = body.get("host_name")
     host_email = body.get("host_email")
     if not host_name or not host_email:
