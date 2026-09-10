@@ -374,7 +374,7 @@ export default function ValetProviderHotelDetail() {
           ${[
           ["Total Events", s?.total_events ?? 0],
           ["Cars Served", s?.total_cars_served ?? 0],
-          ["Platform Rating", s?.platform_avg_rating > 0 ? s.platform_avg_rating + "★" : "-"],
+          // // ["Platform Rating", s?.platform_avg_rating > 0 ? s.platform_avg_rating + "★" : "-"],
           ["Drivers", drivers.length],
           ["Supervisors", supervisors.length],
         ].map(([label, value]) => `<div class="stat"><div class="stat-val">${value}</div><div class="stat-lbl">${label}</div></div>`).join("")}

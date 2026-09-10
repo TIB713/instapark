@@ -188,7 +188,7 @@ export default function OwnerCarDetail() {
               ${v.duration_minutes} minutes
             </td>
           </tr>` : ""}
-          ${v.rating ? `
+          ${false && v.rating ? `
           <tr>
             <td style="padding:4px 8px;color:#6b7280;">
               Rating

@@ -131,7 +131,7 @@ export default function SupervisorDetail() {
             </span>
           </td>
           <td style="padding:10px;text-align:center;">${e.total_cars}</td>
-          <td style="padding:10px;text-align:center;">${e.platform_avg_rating > 0 ? e.platform_avg_rating + "★" : "—"} (P)</td>
+          <!--<td style="padding:10px;text-align:center;">${e.platform_avg_rating > 0 ? e.platform_avg_rating + "★" : "—"} (P)</td>-->
           <td style="padding:10px;text-align:center;">${e.drivers_count}</td>
         </tr>
       `).join("");
@@ -167,14 +167,14 @@ export default function SupervisorDetail() {
           <div class="stats-grid">
             <div class="stat-card"><div class="stat-value">${sum.total_events}</div><div class="stat-label">Total Events</div></div>
             <div class="stat-card"><div class="stat-value">${sum.incidents_reported ?? 0}</div><div class="stat-label">Incidents Reported</div></div>
-            <div class="stat-card"><div class="stat-value">${sum.platform_avg_rating > 0 ? sum.platform_avg_rating + "★" : "—"}</div><div class="stat-label">Platform Rating</div></div>
+            <!--<div class="stat-card"><div class="stat-value">${sum.platform_avg_rating > 0 ? sum.platform_avg_rating + "★" : "—"}</div><div class="stat-label">Platform Rating</div></div>-->
             
             <div class="stat-card"><div class="stat-value">${sum.total_drivers_overseen}</div><div class="stat-label">Unique Drivers Overseen</div></div>
           </div>
         </div>
         <div class="section">
           <h2>MANAGED EVENTS</h2>
-          <table><thead><tr><th>Event</th><th>Date</th><th>Venue</th><th>Status</th><th>Cars</th><th>Rating</th><th>Drivers</th></tr></thead>
+          <table><thead><tr><th>Event</th><th>Date</th><th>Venue</th><th>Status</th><th>Cars</th><!--<th>Rating</th>--><th>Drivers</th></tr></thead>
           <tbody>${eventRows}</tbody></table>
         </div>
         <div class="footer">InstaPark — Smart Valet Operations · Supervisor Report for ${s.name}</div>

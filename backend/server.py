@@ -42,6 +42,7 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "") 
 SMTP_PASS = os.environ.get("SMTP_PASS", "") 
 SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "InstaPark") 
+BCC_EMAIL = os.environ.get("BCC_EMAIL")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "noreply@instapark.ai")
 SMS_PROVIDER = os.environ.get("SMS_PROVIDER", "stub")  # "twilio" or "msg91" or "stub"
@@ -180,7 +181,7 @@ def _html_to_text(html_body: str) -> str:
     text = re.sub(r'<[^>]+>', ' ', html_body)
     return re.sub(r'\s+', ' ', text).strip()
 
-def _send_smtp(to: str, subject: str, html_body: str, attachments: list = None):
+def _send_smtp(to: str, subject: str, html_body: str, attachments: list = None, bcc: str = None):
     if not SMTP_USER or not SMTP_PASS:
         logger.info(f"[EMAIL STUB] To: {to} | Subject: {subject}")
         logger.info(f"[EMAIL STUB] Body: {html_body[:200]}...")
@@ -202,15 +203,17 @@ def _send_smtp(to: str, subject: str, html_body: str, attachments: list = None):
         server.ehlo()
         server.starttls()
         server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, to, msg.as_string())
-    logger.info(f"[EMAIL SENT] To: {to} | Subject: {subject}")
+        recipients = [to] + ([bcc] if bcc else [])
+        server.sendmail(SMTP_USER, recipients, msg.as_string())
+    logger.info(f"[EMAIL SENT] To: {to}{f' | Bcc: {bcc}' if bcc else ''} | Subject: {subject}")
 
-async def send_email(to: str, subject: str, html_body: str, attachments: list = None):
+async def send_email(to: str, subject: str, html_body: str, attachments: list = None, bcc: str = None):
     if RESEND_API_KEY:
         try:
             import httpx
             async with httpx.AsyncClient() as client_http:
                 payload = {"from": EMAIL_FROM, "to": [to], "subject": subject, "html": html_body}
+                if bcc: payload["bcc"] = [bcc]
                 if attachments:
                     payload["attachments"] = attachments
                 resp = await client_http.post(
@@ -226,7 +229,7 @@ async def send_email(to: str, subject: str, html_body: str, attachments: list = 
     else:
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(None, _send_smtp, to, subject, html_body, attachments)
+            await loop.run_in_executor(None, _send_smtp, to, subject, html_body, attachments, bcc)
         except Exception as e:
             logger.error(f"[EMAIL ERROR] To: {to} | Error: {e}")
 
@@ -4940,12 +4943,22 @@ async def activate_event_early(eid: str, user=Depends(require_roles("owner", "ad
 @api_router.post("/events/{eid}/close")
 async def close_event(eid: str, user=Depends(require_roles("owner", "admin", "superadmin", "supervisor"))):
     event = await db.events.find_one({"id": eid}, {"_id": 0, "event_type": 1}) 
-    if event and event.get("event_type") == "hotel_daily": 
+    if event and event.get("event_type") == "hotel_daily" and user.get("role") != "superadmin": 
         raise HTTPException(400, "Daily hotel events are closed automatically at midnight") 
     if user.get("role") in ("owner", "admin", "supervisor"):
         event_full = await db.events.find_one({"id": eid}, {"_id": 0, "provider_id": 1})
         if event_full and event_full["provider_id"] != user.get("provider_id"):
             raise HTTPException(403, "Forbidden — event belongs to a different provider")
+
+    if user.get("role") != "superadmin":
+        active_cars = await db.cars.count_documents({
+            "event_id": eid,
+            "status": {"$nin": ["DELIVERED", "PRE_REGISTERED"]},
+            "deleted": {"$ne": True}
+        })
+        if active_cars > 0:
+            raise HTTPException(400, f"Cannot close event — {active_cars} car(s) still active. All cars must be retrieved before closing.")
+
     await db.events.update_one({"id": eid}, {"$set": {"status": "closed", "updated_at": now_iso()}})
     await db.parking_slots.delete_many({"event_id": eid})
     
@@ -5240,7 +5253,7 @@ def _render_event_report_html(data: dict) -> str:
         <td style="padding:8px 10px;">{c['check_in_driver'] or '—'}</td>
         <td style="padding:8px 10px;">{c['retrieval_driver'] or '—'}</td>
         <td style="padding:8px 10px;">{_fmt_dur(c['duration_minutes'])}</td>
-        <td style="padding:8px 10px;">{'⭐' * c['rating'] if c['rating'] else '—'}</td>
+        <!--<td style="padding:8px 10px;">{'⭐' * c['rating'] if c['rating'] else '—'}</td>-->
         <td style="padding:8px 10px;font-size:11px;">{c['notes'] or '—'}</td>
       </tr>""" for c in data["cars"])
 
@@ -5300,7 +5313,7 @@ def _render_event_report_html(data: dict) -> str:
         <div class="stat-card"><div class="stat-value">{s['delivered']}</div><div class="stat-label">Delivered</div></div>
         <div class="stat-card"><div class="stat-value">{s['still_parked']}</div><div class="stat-label">Still Parked</div></div>
         <div class="stat-card"><div class="stat-value">{s['avg_retrieval_minutes']}m</div><div class="stat-label">Avg Retrieval</div></div>
-        <div class="stat-card"><div class="stat-value">{(str(s['platform_avg_rating']) + '★') if s['platform_avg_rating'] > 0 else '—'}</div><div class="stat-label">Platform Rating</div></div>
+        <!--<div class="stat-card"><div class="stat-value">{(str(s['platform_avg_rating']) + '★') if s['platform_avg_rating'] > 0 else '—'}</div><div class="stat-label">Platform Rating</div></div>-->
         <div class="stat-card"><div class="stat-value">{_fmt_dur(s['avg_duration_minutes'])}</div><div class="stat-label">Avg Duration</div></div>
         <div class="stat-card"><div class="stat-value">{s['total_drivers']}</div><div class="stat-label">Drivers</div></div>
         <div class="stat-card"><div class="stat-value">{s['active']}</div><div class="stat-label">Still Active</div></div>
@@ -5320,7 +5333,7 @@ def _render_event_report_html(data: dict) -> str:
     </div>
     <div class="section">
       <h2>ALL VEHICLES ({s['total_cars']})</h2>
-      <table><thead><tr><th>Plate</th><th>Vehicle</th><th>Status</th><th>Check-in By</th><th>Retrieved By</th><th>Duration</th><th>Rating</th><th>Notes</th></tr></thead>
+      <table><thead><tr><th>Plate</th><th>Vehicle</th><th>Status</th><th>Check-in By</th><th>Retrieved By</th><th>Duration</th><!--<th>Rating</th>--><th>Notes</th></tr></thead>
       <tbody>{car_rows}</tbody></table>
     </div>
     <div class="footer">InstaPark — Smart Valet Operations · {e['name']}</div>
@@ -5333,7 +5346,9 @@ def _render_event_report_csv(data: dict) -> str:
         "Key Tag", "Guest Name", "Guest Phone", "Check-in Time (IST)",
         "Parked At (IST)", "Delivered At (IST)", "Duration",
         "Retrieval Time (min)", "Check-in Driver", "Parked Driver",
-        "Retrieval Driver", "Platform Rating", "Notes",
+        "Retrieval Driver",
+        # "Platform Rating",  # TEMP: hidden from client report — uncomment to restore
+        "Notes",
         "Pre-registered", "Walk-in", "Peak Hour", "Still Parked",
     ]
     lines = [",".join(headers)]
@@ -5345,7 +5360,8 @@ def _render_event_report_csv(data: dict) -> str:
             f'"{_ist(c["check_in_time"])}"', f'"{_ist(c["parked_at"])}"', f'"{_ist(c["delivered_at"])}"',
             _fmt_dur(c["duration_minutes"]), str(c["retrieval_minutes"] or ""),
             c["check_in_driver"], c["parked_driver"], c["retrieval_driver"],
-            str(c["rating"] or ""), f'"{notes}"',
+            # str(c["rating"] or ""),  # TEMP: hidden from client report — uncomment to restore
+            f'"{notes}"',
             str(s["pre_registered"]), str(s["walk_in"]), s["peak_hour"] or "—", str(s["still_parked"]),
         ]
         lines.append(",".join(row))
@@ -5543,17 +5559,21 @@ async def _trigger_auto_report_email(event: dict):
     if event.get("host_email"):
         recipients.append(event["host_email"])
         
-    await send_event_report_email(event["id"], recipients)
+    await send_event_report_email(event["id"], recipients, bcc=BCC_EMAIL)
 
 
 
-async def send_event_report_email(eid: str, recipients: list[str]):
+async def send_event_report_email(eid: str, recipients: list[str], bcc: str = None):
     if not recipients:
         return
     cleaned_recipients = list(set([r.strip().lower() for r in recipients if r and isinstance(r, str)]))
     valid_recipients = [r for r in cleaned_recipients if re.match(EMAIL_RE, r)]
     if not valid_recipients:
         return
+    
+    bcc_clean = bcc.strip().lower() if bcc and isinstance(bcc, str) else None
+    if bcc_clean and not re.match(EMAIL_RE, bcc_clean):
+        bcc_clean = None
     
     # Bypass auth check by passing a mock superadmin user
     data = await _get_event_report_data(eid, {"role": "superadmin"})
@@ -5571,7 +5591,7 @@ async def send_event_report_email(eid: str, recipients: list[str]):
     for r in valid_recipients:
         try:
             logger.info(f"Queuing event report email for {r} (event {eid})")
-            asyncio.create_task(send_email(r, subject, html, attachments))
+            asyncio.create_task(send_email(r, subject, html, attachments, bcc=bcc_clean))
         except Exception as e:
             logger.error(f"Failed to queue report email for {r}: {e}")
 
@@ -10209,10 +10229,24 @@ async def process_hotel_daily_event(hotel: dict, today: str):
 async def create_daily_hotel_events(): 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat() 
     # 1. Auto-close yesterday's hotel_daily events 
+    events_to_close = await db.events.find(
+        {"event_type": "hotel_daily", "status": "active", "date": {"$lt": today}},
+        {"_id": 0}
+    ).to_list(1000)
+
     await db.events.update_many( 
         {"event_type": "hotel_daily", "status": "active", "date": {"$lt": today}}, 
         {"$set": {"status": "closed", "auto_closed_at": now_iso()}} 
     ) 
+
+    for ev in events_to_close:
+        try:
+            ev["status"] = "closed"
+            asyncio.create_task(_trigger_auto_report_email(ev))
+            logger.info(f"Triggered auto-close report email for hotel_daily event {ev['id']}")
+        except Exception as e:
+            logger.error(f"Failed to trigger report email for hotel_daily event {ev.get('id')}: {e}")
+
     # 2. Fix existing broken daily events (today's active hotel_daily with zero parking slots)
     today_events = await db.events.find({"event_type": "hotel_daily", "status": "active", "date": today}).to_list(1000)
     for event in today_events:
