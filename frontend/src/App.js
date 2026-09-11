@@ -20,6 +20,7 @@ import CarDetail from "@/pages/superadmin/CarDetail";
 import LiveMonitor from "@/pages/superadmin/LiveMonitor";
 import Settings from "@/pages/superadmin/Settings";
 import Plans from "@/pages/superadmin/Plans";
+import SmartTags from "@/pages/superadmin/SmartTags";
 import GuestView from "@/pages/guest/GuestView";
 import PreRegister from "@/pages/guest/PreRegister";
 import EventPreRegister from "@/pages/guest/EventPreRegister";
@@ -121,6 +122,7 @@ function App() {
           <Route path="/superadmin/cars/id/:carId" element={<RequireAuth><CarDetail /></RequireAuth>} />
           <Route path="/superadmin/live-monitor" element={<RequireAuth><LiveMonitor /></RequireAuth>} />
           <Route path="/superadmin/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+          <Route path="/superadmin/smart-tags" element={<RequireAuth><SmartTags /></RequireAuth>} />
           <Route path="/superadmin" element={<Navigate to="/superadmin/dashboard" replace />} />
 
           {/* Guest and Verify Routes */}

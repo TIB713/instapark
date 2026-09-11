@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   Car, LogOut, LayoutDashboard, Building2, Hotel, Users,
-  CalendarDays, Menu, List, Settings as SettingsIcon, ChevronRight, Shield, Bell, CheckCircle, CreditCard
+  CalendarDays, Menu, List, Settings as SettingsIcon, ChevronRight, Shield, Bell, CheckCircle, CreditCard, Tag
 } from "lucide-react";
 import { api, decodeJwt } from "@/lib/api";
 import { Sheet, SheetTrigger, SheetContent } from "@/components/ui/sheet";
@@ -97,6 +97,7 @@ export default function SuperLayout({ title, children }) {
     { to: "/superadmin/cars", label: "Cars Registry", icon: Car },
     { to: "/superadmin/live-monitor", label: "Live Monitor", icon: List },
     { to: "/superadmin/plans", label: "Plans", icon: CreditCard },
+    { to: "/superadmin/smart-tags", label: "Smart Tags", icon: Tag },
     { to: "/superadmin/settings", label: "Settings", icon: SettingsIcon },
   ];
 

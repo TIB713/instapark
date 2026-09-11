@@ -10400,6 +10400,8 @@ async def on_start():
     # TTL on OTP rate limits so records don't accumulate forever
     await db.otp_rate_limits.create_index("created_at", expireAfterSeconds=3600)
     await db.superadmins.create_index([("email", ASCENDING)], unique=True)
+    await db.smart_tags.create_index([("tag_code", ASCENDING)], unique=True)
+    await db.smart_tags.create_index([("qr_token", ASCENDING)], unique=True)
     # Backfill provider_qr_token for existing providers 
     providers_without_qr = await db.providers.find( 
         {"provider_qr_token": {"$exists": False}}, {"_id": 0, "id": 1} 
@@ -10862,6 +10864,106 @@ async def on_stop():
 @api_router.get("/")
 async def root():
     return {"service": "InstaPark", "status": "ok"}
+
+# ==================== SMART CONTACT TAG SYSTEM ====================
+# All Smart Contact Tag backend logic lives in this block.
+# This is a global, non-provider-scoped feature.
+
+import string
+
+async def generate_unique_tag_code(local_set: set = None) -> str:
+    if local_set is None:
+        local_set = set()
+
+    code = await _try_random_code_in_block("", local_set)
+    if code:
+        return code
+
+    # Numeric space (0000-9999) exhausted — escalate through lettered blocks
+    for letter in string.ascii_uppercase:
+        code = await _try_random_code_in_block(letter, local_set)
+        if code:
+            return code
+
+    raise HTTPException(500, "Tag code space exhausted")
+
+async def _try_random_code_in_block(prefix: str, local_set: set, max_attempts: int = 50):
+    import random
+    for _ in range(max_attempts):
+        code = f"{prefix}{random.randint(0, 9999):04d}"
+        if code in local_set:
+            continue
+        collision = await db.smart_tags.find_one({"tag_code": code})
+        if not collision:
+            return code
+    return None
+
+@api_router.post("/smart-tags/generate")
+async def generate_smart_tags(body: dict = Body(...), user=Depends(require_roles("superadmin"))):
+    quantity = body.get("quantity", 0)
+    if not isinstance(quantity, int) or quantity < 1 or quantity > 500:
+        raise HTTPException(400, "Quantity must be an integer between 1 and 500.")
+        
+    generated = []
+    local_codes = set()
+    
+    for _ in range(quantity):
+        while True:
+            code = await generate_unique_tag_code(local_codes)
+            local_codes.add(code)
+            
+            tag_id = str(uuid.uuid4())
+            tag_doc = {
+                "id": tag_id,
+                "tag_code": code,
+                "qr_token": str(uuid.uuid4()),
+                "status": "UNASSIGNED",
+                "owner_name": None,
+                "owner_mobile": None,
+                "owner_email": None,
+                "car_numberplate": None,
+                "generated_by": user["user_id"],
+                "generated_at": now_iso(),
+                "assigned_at": None,
+            }
+            try:
+                await db.smart_tags.insert_one(tag_doc)
+                tag_doc.pop("_id", None)
+                generated.append(tag_doc)
+                break
+            except DuplicateKeyError:
+                local_codes.remove(code)
+                continue
+                
+    return generated
+
+@api_router.get("/smart-tags")
+async def list_smart_tags(
+    search: str = Query(None),
+    status: str = Query(None),
+    user=Depends(require_roles("superadmin"))
+):
+    query = {}
+    if search:
+        query["$or"] = [
+            {"tag_code": {"$regex": search, "$options": "i"}},
+            {"car_numberplate": {"$regex": search, "$options": "i"}},
+        ]
+    if status:
+        query["status"] = status
+        
+    cursor = db.smart_tags.find(query, {"_id": 0}).sort("generated_at", -1)
+    tags = await cursor.to_list(10000)
+    return tags
+
+@api_router.get("/smart-tags/{tag_id}")
+async def get_smart_tag(tag_id: str, user=Depends(require_roles("superadmin"))):
+    tag = await db.smart_tags.find_one({"id": tag_id}, {"_id": 0})
+    if not tag:
+        raise HTTPException(404, "Tag not found")
+    return tag
+
+# ==================== END SMART CONTACT TAG SYSTEM ====================
 
 app.include_router(api_router)
 app.add_middleware(
